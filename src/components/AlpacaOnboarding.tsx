@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { CheckCircle, AlertTriangle } from "lucide-react";
 import { api, AlpacaConnectResponse, AlpacaStatus } from "@/lib/api";
 
 type Mode = "paper" | "live";
@@ -41,8 +42,9 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
   if (result) {
     return (
       <div className="space-y-4">
-        <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3">
-          ✅ Verbunden! Kontostand: ${result.cash.toLocaleString("de-DE", { maximumFractionDigits: 2 })}
+        <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3 flex items-center gap-2">
+          <CheckCircle size={16} strokeWidth={1.5} className="shrink-0" />
+          Verbunden! Kontostand: ${result.cash.toLocaleString("de-DE", { maximumFractionDigits: 2 })}
         </div>
         <button
           onClick={onConnected}
@@ -61,8 +63,8 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
           Empfohlen zum Testen – kein echtes Geld.
         </p>
       ) : (
-        <p className="text-xs text-loss bg-loss/10 border border-loss/30 rounded-btn px-3 py-2">
-          ⚠️ Echtes Geld – nur für erfahrene Anleger.
+        <p className="text-xs text-loss bg-loss/10 border border-loss/30 rounded-btn px-3 py-2 flex items-center gap-1.5">
+          <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0" /> Echtes Geld – nur für erfahrene Anleger.
         </p>
       )}
 

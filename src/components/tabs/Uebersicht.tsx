@@ -1,18 +1,29 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Target } from "lucide-react";
+import { Target, TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
 import { api, Overview } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
 import { fmtUsd, fmtUsdSigned, fmtMenge, gainLossClass } from "@/lib/format";
 
-const REGIME_LABEL: Record<string, string> = {
-  bullish: "📈 Bullish",
-  bearish: "📉 Bearish",
-  neutral: "➡️ Neutral",
+const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
+  bullish: { icon: TrendingUp, label: "Bullish" },
+  bearish: { icon: TrendingDown, label: "Bearish" },
+  neutral: { icon: Minus, label: "Neutral" },
 };
+
+function regimeSubtext(regime: string) {
+  const entry = REGIME_LABEL[regime];
+  if (!entry) return regime;
+  const Icon = entry.icon;
+  return (
+    <span className="flex items-center gap-1">
+      <Icon size={14} strokeWidth={1.5} /> {entry.label}
+    </span>
+  );
+}
 
 // Grobe Sektor-Zuordnung fürs Übersichts-Balkendiagramm – rein für die
 // Anzeige, hat keine Auswirkung auf die Bot-Logik (die kennt keine
@@ -77,7 +88,7 @@ export default function Uebersicht() {
           label="Offene Positionen"
           value={`${data.open_trades.length}/${data.max_open_positions}`}
           color="gold"
-          subtext={REGIME_LABEL[data.market_regime] ?? data.market_regime}
+          subtext={regimeSubtext(data.market_regime)}
         />
       </div>
 
@@ -118,7 +129,9 @@ export default function Uebersicht() {
                 <div className="flex items-center justify-between mb-2">
                   <div className="font-medium flex items-center gap-1.5">
                     {t.ticker}
-                    <span className="flex items-center gap-1 text-gold text-xs">🤖 {t.mode}</span>
+                    <span className="flex items-center gap-1 text-gold text-xs">
+                      <Bot size={14} strokeWidth={1.5} /> {t.mode}
+                    </span>
                   </div>
                   <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
                     {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}

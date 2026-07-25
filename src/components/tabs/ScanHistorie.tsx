@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  ChevronDown, ChevronRight, CheckCircle, XCircle,
+  AlertTriangle, TrendingUp, TrendingDown, Minus,
+} from "lucide-react";
 import { api, ScanDay, ScanLogEntry } from "@/lib/api";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -12,20 +15,40 @@ const MIN_SIGNAL_SCORE = 65;
 
 function checkCell(value: number | null) {
   if (value === null || value === undefined) return <span className="text-text-muted">–</span>;
-  return value > 0 ? <span>✅</span> : <span>❌</span>;
+  return value > 0
+    ? <CheckCircle size={16} strokeWidth={1.5} className="text-gain inline" />
+    : <XCircle size={16} strokeWidth={1.5} className="text-loss inline" />;
 }
 
 function statusCell(row: ScanLogEntry) {
   if (row.ko_reason) {
-    return <span className="text-loss">🔴 KO: {row.ko_reason}</span>;
+    return (
+      <span className="text-loss flex items-center gap-1.5">
+        <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
+      </span>
+    );
   }
   if (row.trade_executed) {
-    return <span className="text-gain">🟢 Trade ausgeführt</span>;
+    return (
+      <span className="text-gain flex items-center gap-1.5">
+        <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
+      </span>
+    );
   }
   if (row.approved) {
-    return <span className="text-gold">🟡 Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}</span>;
+    return (
+      <span className="text-gold flex items-center gap-1.5">
+        <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
+      </span>
+    );
   }
   return <span className="text-text-muted">– Score zu niedrig</span>;
+}
+
+function regimeIcon(regime: string | null) {
+  if (regime === "bullish") return <TrendingUp size={16} strokeWidth={1.5} className="text-gain inline" />;
+  if (regime === "bearish") return <TrendingDown size={16} strokeWidth={1.5} className="text-loss inline" />;
+  return <Minus size={16} strokeWidth={1.5} className="text-text-muted inline" />;
 }
 
 function formatTag(datum: string): string {
@@ -43,7 +66,7 @@ const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   { key: "rev_score", label: "Rev", align: "center", render: (r) => checkCell(r.rev_score) },
   {
     key: "market_regime", label: "Regime", align: "center",
-    render: (r) => (r.market_regime === "bullish" ? "📈" : r.market_regime === "bearish" ? "📉" : "➡️"),
+    render: (r) => regimeIcon(r.market_regime),
   },
   { key: "status", label: "Status", render: (r) => statusCell(r) },
 ];

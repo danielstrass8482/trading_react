@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle } from "lucide-react";
 import {
   api, BotConfigEntry, EntrySlot, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
@@ -13,21 +13,21 @@ import { fmtPct, gainLossClass } from "@/lib/format";
 type PresetKey = "konservativ" | "ausgewogen" | "aggressiv";
 
 const PRESETS: {
-  key: PresetKey; emoji: string; label: string; bullets: string[]; warnung?: string;
+  key: PresetKey; icon: typeof Shield; label: string; bullets: string[]; warnung?: string;
   values: Record<string, string>;
 }[] = [
   {
-    key: "konservativ", emoji: "🟢", label: "Konservativ",
+    key: "konservativ", icon: Shield, label: "Konservativ",
     bullets: ["Max $30/Trade", "Max 3 offene Positionen", "ATR × 1.0", "Max 3 Handelstage"],
     values: { MAX_CAPITAL_PER_TRADE: "30", MAX_OPEN_POSITIONS: "3", ATR_MULTIPLIER_SL: "1.0", ATR_MULTIPLIER_TP: "2.0", MAX_HOLDING_DAYS: "3", VOLATILE_SEGMENT_PCT: "0.0" },
   },
   {
-    key: "ausgewogen", emoji: "🟡", label: "Ausgewogen",
+    key: "ausgewogen", icon: Activity, label: "Ausgewogen",
     bullets: ["Max $50/Trade", "Max 5 offene Positionen", "ATR × 1.5", "Max 5 Handelstage"],
     values: { MAX_CAPITAL_PER_TRADE: "50", MAX_OPEN_POSITIONS: "5", ATR_MULTIPLIER_SL: "1.5", ATR_MULTIPLIER_TP: "3.0", MAX_HOLDING_DAYS: "5", VOLATILE_SEGMENT_PCT: "0.33" },
   },
   {
-    key: "aggressiv", emoji: "🔴", label: "Aggressiv",
+    key: "aggressiv", icon: Zap, label: "Aggressiv",
     bullets: ["Max $100/Trade", "Max 8 offene Positionen", "ATR × 2.0", "Max 7 Handelstage"],
     warnung: "Höheres Risiko",
     values: { MAX_CAPITAL_PER_TRADE: "100", MAX_OPEN_POSITIONS: "8", ATR_MULTIPLIER_SL: "2.0", ATR_MULTIPLIER_TP: "4.0", MAX_HOLDING_DAYS: "7", VOLATILE_SEGMENT_PCT: "0.5" },
@@ -95,13 +95,17 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
               current === p.key ? "border-gold bg-gold/5" : "border-border hover:border-border-accent/50"
             }`}
           >
-            <div className="font-medium mb-2">
-              {p.emoji} {p.label}
+            <div className="font-medium mb-2 flex items-center gap-1.5">
+              <p.icon size={16} strokeWidth={1.5} /> {p.label}
             </div>
             <ul className="text-xs text-text-muted space-y-1">
               {p.bullets.map((b) => <li key={b}>• {b}</li>)}
             </ul>
-            {p.warnung && <p className="text-xs text-loss mt-2">⚠️ {p.warnung}</p>}
+            {p.warnung && (
+              <p className="text-xs text-loss mt-2 flex items-center gap-1">
+                <AlertTriangle size={13} strokeWidth={1.5} /> {p.warnung}
+              </p>
+            )}
           </button>
         ))}
       </div>
@@ -172,7 +176,11 @@ function GuardrailCard({ botKey, value, config }: { botKey: string; value: strin
               <X size={16} strokeWidth={2} />
             </button>
           </div>
-          {!validation.valid && <div className="text-xs text-loss mt-1">⚠️ {validation.message}</div>}
+          {!validation.valid && (
+            <div className="text-xs text-loss mt-1 flex items-start gap-1">
+              <AlertTriangle size={13} strokeWidth={1.5} className="shrink-0 mt-0.5" /> {validation.message}
+            </div>
+          )}
         </div>
       ) : (
         <div className="font-figures">{displayValue}</div>

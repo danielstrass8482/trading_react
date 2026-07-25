@@ -16,7 +16,7 @@ export default function KPICard({
   label: string;
   value: string;
   color?: Color;
-  subtext?: string;
+  subtext?: React.ReactNode;
 }) {
   return (
     <div className="bg-bg-card border border-border rounded-card px-6 py-5">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle } from "lucide-react";
 import { login, register } from "@/lib/auth";
 
 type Tab = "anmelden" | "registrieren";
@@ -127,9 +128,12 @@ export default function LoginPage() {
             </button>
           </form>
         ) : regSuccess ? (
-          <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3">
-            ✅ Registrierung erfolgreich!<br />
-            Du wirst per E-Mail benachrichtigt sobald dein Zugang freigeschaltet wurde.
+          <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3 flex items-start gap-2">
+            <CheckCircle size={16} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+            <span>
+              Registrierung erfolgreich!<br />
+              Du wirst per E-Mail benachrichtigt sobald dein Zugang freigeschaltet wurde.
+            </span>
           </div>
         ) : (
           <form onSubmit={handleRegister} className="space-y-4">

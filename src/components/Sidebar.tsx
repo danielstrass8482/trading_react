@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut } from "lucide-react";
+import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
 import { logout } from "@/lib/auth";
@@ -15,10 +15,10 @@ const NAV_ITEMS: { key: TabKey; label: string; icon: React.ComponentType<{ size?
   { key: "dokumentation", label: "Dokumentation", icon: BookOpen },
 ];
 
-const REGIME_LABEL: Record<string, string> = {
-  bullish: "📈 BULLISH",
-  bearish: "📉 BEARISH",
-  neutral: "➡️ NEUTRAL",
+const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
+  bullish: { icon: TrendingUp, label: "BULLISH" },
+  bearish: { icon: TrendingDown, label: "BEARISH" },
+  neutral: { icon: Minus, label: "NEUTRAL" },
 };
 
 export default function Sidebar({
@@ -91,7 +91,19 @@ export default function Sidebar({
               SL: ~{fmtGuardrailValue("STOP_LOSS_PCT", cfg.STOP_LOSS_PCT ?? "0")} | TP: ~
               {fmtGuardrailValue("TAKE_PROFIT_PCT", cfg.TAKE_PROFIT_PCT ?? "0")}
             </div>
-            <div>Regime: {REGIME_LABEL[overview.market_regime] ?? overview.market_regime}</div>
+            <div className="flex items-center gap-1">
+              Regime:
+              {(() => {
+                const entry = REGIME_LABEL[overview.market_regime];
+                if (!entry) return overview.market_regime;
+                const Icon = entry.icon;
+                return (
+                  <span className="flex items-center gap-1">
+                    <Icon size={12} strokeWidth={1.5} /> {entry.label}
+                  </span>
+                );
+              })()}
+            </div>
           </div>
         )}
 

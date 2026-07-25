@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 const SCORE_WEIGHTS: { name: string; punkte: number; beschreibung: string }[] = [
   { name: "RSI (14)", punkte: 20, beschreibung: "Momentum – überverkaufte Titel (RSI < 35) gelten als bullisch." },
@@ -130,9 +130,18 @@ export default function Dokumentation() {
           bullish, bearish oder neutral.
         </p>
         <ul className="space-y-1.5">
-          <li>📈 <strong>Bullish</strong> – Kurs über SMA200, SMA50 über SMA200.</li>
-          <li>📉 <strong>Bearish</strong> – Kurs unter SMA200, SMA50 unter SMA200.</li>
-          <li>➡️ <strong>Neutral</strong> – alles dazwischen.</li>
+          <li className="flex items-center gap-1.5">
+            <TrendingUp size={16} strokeWidth={1.5} className="text-gain shrink-0" />
+            <strong>Bullish</strong> – Kurs über SMA200, SMA50 über SMA200.
+          </li>
+          <li className="flex items-center gap-1.5">
+            <TrendingDown size={16} strokeWidth={1.5} className="text-loss shrink-0" />
+            <strong>Bearish</strong> – Kurs unter SMA200, SMA50 unter SMA200.
+          </li>
+          <li className="flex items-center gap-1.5">
+            <Minus size={16} strokeWidth={1.5} className="text-text-muted shrink-0" />
+            <strong>Neutral</strong> – alles dazwischen.
+          </li>
         </ul>
         <p>
           In einem bärischen Regime bekommen klassische Long-Aktien −10 Punkte Score-Abzug, inverse
