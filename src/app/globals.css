@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* Design Tokens – identisch zu Portfolio-OS (portfolio_react/src/app/globals.css),
+   damit beide Apps optisch als ein System wirken. Tailwind v4 @theme, damit
+   Utilities wie bg-bg-app / text-text-muted / border-border-accent / bg-gold
+   / text-gain / bg-paper direkt zur Verfügung stehen. Flat design – bewusst
+   keine Shadow-Tokens definiert. */
+@theme {
+  --color-bg-app: #161412;
+  --color-bg-sidebar: #131110;
+  --color-bg-card: #1c1a17;
+  --color-bg-hover: #232019;
+
+  --color-border: #2c2723;
+  --color-border-accent: #c9a252;
+
+  --color-text-primary: #f0ede8;
+  --color-text-muted: #8a8378;
+  --color-text-disabled: #4a4640;
+
+  --color-gold: #c9a252;
+  --color-gain: #5fb589;
+  --color-loss: #d9695f;
+  --color-paper: #8a92e0;
+  --color-live: #5fb589;
+
+  --radius-card: 3px;
+  --radius-nav: 2px;
+  --radius-btn: 3px;
+
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+}
+
+body {
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans), sans-serif;
+}
+
+/* Zahlen (Kurse, Beträge, Prozente) immer in JetBrains Mono. */
+.font-figures {
+  font-family: var(--font-mono), monospace;
+}
+
+* {
+  box-shadow: none !important;
+}
