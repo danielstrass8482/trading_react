@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Sidebar, { TabKey } from "@/components/Sidebar";
 import { QueryProvider } from "@/lib/QueryProvider";
+import AlpacaOnboarding from "@/components/AlpacaOnboarding";
 
 import Uebersicht from "@/components/tabs/Uebersicht";
 import Performance from "@/components/tabs/Performance";
@@ -24,6 +25,7 @@ function App() {
 
   return (
     <div className="flex min-h-screen">
+      <AlpacaOnboarding />
       <Sidebar active={active} onSelect={setActive} />
       <div className="flex-1">
         <main className="px-8 py-6 max-w-[1400px] w-full">

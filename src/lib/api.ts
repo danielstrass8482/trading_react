@@ -20,6 +20,15 @@ api.interceptors.response.use(
   }
 );
 
+export type AlpacaStatus =
+  | { connected: false; error?: string }
+  | { connected: true; mode: "paper" | "live"; status: string; buying_power: number; cash: number };
+
+export type AlpacaConnectResponse = {
+  message: string;
+  account: { status: string; buying_power: number; cash: number; mode: "paper" | "live" };
+};
+
 export type MarketRegime = "bullish" | "bearish" | "neutral";
 export type TradingMode = "LIVE" | "PAPER";
 

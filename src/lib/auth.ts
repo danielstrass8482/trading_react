@@ -26,6 +26,20 @@ export const login = async (email: string, password: string): Promise<AuthUser> 
   return data.user;
 };
 
+export const register = async (
+  name: string, email: string, password: string, reason: string
+): Promise<void> => {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password, reason }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Registrierung fehlgeschlagen");
+  }
+};
+
 export const logout = async () => {
   await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
   if (typeof window !== "undefined") {
