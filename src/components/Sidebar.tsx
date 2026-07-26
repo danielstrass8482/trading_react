@@ -21,6 +21,47 @@ const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> =
   neutral: { icon: Minus, label: "NEUTRAL" },
 };
 
+function BrokerStatus({ overview, cfg }: { overview?: Overview; cfg: Record<string, string> }) {
+  const activeBroker = cfg.ACTIVE_BROKER ?? "alpaca";
+  const drainMode = (cfg.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
+  const alpacaOpen = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca").length;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border">
+      <div className="px-2 mb-2 text-xs uppercase tracking-wider text-text-muted">Broker</div>
+      <div className="px-2 space-y-2.5 text-xs">
+        <div>
+          <div className="flex items-center justify-between">
+            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "alpaca" ? "text-gold" : "text-text-muted"}`}>
+              <span className={activeBroker === "alpaca" ? "text-gold" : "text-text-disabled"}>●</span> ALPACA
+              {overview?.trading_mode && <span className="text-text-muted font-normal">{overview.trading_mode}</span>}
+            </span>
+            {activeBroker === "alpaca" && drainMode && (
+              <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-orange-500/20 text-orange-400">
+                Drain
+              </span>
+            )}
+          </div>
+          <div className="text-text-muted font-figures mt-0.5">
+            Konto: {overview ? `$${overview.portfolio_value.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {alpacaOpen}
+          </div>
+        </div>
+        <div>
+          <div className="flex items-center justify-between">
+            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "ibkr" ? "text-gold" : "text-text-muted"}`}>
+              <span className={activeBroker === "ibkr" ? "text-gold" : "text-text-disabled"}>●</span> IBKR
+            </span>
+            <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-text-muted/20 text-text-muted">
+              Pending
+            </span>
+          </div>
+          <div className="text-text-muted mt-0.5">Konto: – (Einzahlung ausstehend)</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar({
   active,
   onSelect,
@@ -106,6 +147,8 @@ export default function Sidebar({
             </div>
           </div>
         )}
+
+        <BrokerStatus overview={overview} cfg={cfg} />
 
         <button
           onClick={logout}

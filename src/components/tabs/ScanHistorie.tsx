@@ -45,6 +45,15 @@ function statusCell(row: ScanLogEntry) {
   return <span className="text-text-muted">– Score zu niedrig</span>;
 }
 
+function brokerBadge(broker: string | null | undefined) {
+  const b = (broker ?? "alpaca").toLowerCase();
+  return (
+    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "ibkr" ? "bg-paper/20 text-paper" : "bg-gold/20 text-gold"}`}>
+      {b === "ibkr" ? "IBKR" : "ALPACA"}
+    </span>
+  );
+}
+
 function regimeIcon(regime: string | null) {
   if (regime === "bullish") return <TrendingUp size={16} strokeWidth={1.5} className="text-gain inline" />;
   if (regime === "bearish") return <TrendingDown size={16} strokeWidth={1.5} className="text-loss inline" />;
@@ -56,7 +65,14 @@ function formatTag(datum: string): string {
 }
 
 const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
-  { key: "ticker", label: "Ticker" },
+  {
+    key: "ticker", label: "Ticker",
+    render: (r) => (
+      <span className="flex items-center gap-1.5">
+        {r.ticker} {brokerBadge(r.broker)}
+      </span>
+    ),
+  },
   { key: "score", label: "Score", align: "right", render: (r) => <span className="font-figures">{r.score}</span> },
   { key: "rsi_score", label: "RSI", align: "center", render: (r) => checkCell(r.rsi_score) },
   { key: "sma_score", label: "SMA", align: "center", render: (r) => checkCell(r.sma_score) },

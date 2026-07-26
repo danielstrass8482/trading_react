@@ -14,6 +14,15 @@ const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> =
   neutral: { icon: Minus, label: "Neutral" },
 };
 
+function brokerBadge(broker: string | null | undefined) {
+  const b = (broker ?? "alpaca").toLowerCase();
+  return (
+    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "ibkr" ? "bg-paper/20 text-paper" : "bg-gold/20 text-gold"}`}>
+      {b === "ibkr" ? "IBKR" : "ALPACA"}
+    </span>
+  );
+}
+
 function regimeSubtext(regime: string) {
   const entry = REGIME_LABEL[regime];
   if (!entry) return regime;
@@ -132,6 +141,7 @@ export default function Uebersicht() {
                     <span className="flex items-center gap-1 text-gold text-xs">
                       <Bot size={14} strokeWidth={1.5} /> {t.mode}
                     </span>
+                    {brokerBadge(t.broker)}
                   </div>
                   <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
                     {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}

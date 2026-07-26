@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle } from "lucide-react";
 import {
-  api, BotConfigEntry, EntrySlot, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
+  api, BotConfigEntry, EntrySlot, Overview, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtPct, gainLossClass } from "@/lib/format";
+import { fmtPct, fmtUsd, gainLossClass } from "@/lib/format";
 
 type PresetKey = "konservativ" | "ausgewogen" | "aggressiv";
 
@@ -190,6 +190,108 @@ function GuardrailCard({ botKey, value, config }: { botKey: string; value: strin
   );
 }
 
+function BrokerConfigSection({ config }: { config: Record<string, string> }) {
+  const queryClient = useQueryClient();
+
+  const { data: overview } = useQuery({
+    queryKey: ["overview"],
+    queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
+  });
+
+  const activeBroker = config.ACTIVE_BROKER ?? "alpaca";
+  const drainMode = (config.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
+  const alpacaOpenTrades = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca");
+
+  const brokerMutation = useMutation({
+    mutationFn: (broker: string) => api.put("/api/bot-config/ACTIVE_BROKER", { value: broker }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config"] }),
+  });
+
+  const drainMutation = useMutation({
+    mutationFn: (value: boolean) => api.put("/api/bot-config/ALPACA_DRAIN_MODE", { value: value ? "true" : "false" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config"] }),
+  });
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Broker-Konfiguration</h3>
+      <p className="text-xs text-text-muted">Aktiver Broker für neue Trades:</p>
+
+      <div className="space-y-2">
+        <label
+          className={`flex items-start gap-2 px-3 py-2.5 rounded-card border cursor-pointer transition-colors ${
+            activeBroker === "alpaca" ? "border-gold bg-gold/5" : "border-border hover:border-border-accent/50"
+          } ${brokerMutation.isPending ? "opacity-60 pointer-events-none" : ""}`}
+        >
+          <input
+            type="radio" name="active-broker" className="mt-1 accent-gold"
+            checked={activeBroker === "alpaca"}
+            onChange={() => activeBroker !== "alpaca" && brokerMutation.mutate("alpaca")}
+          />
+          <div className="text-sm">
+            <div className="font-medium">Alpaca Markets</div>
+            <div className="text-xs text-text-muted mt-0.5">US-Aktien · Fractional Shares · Paper Trading verfügbar</div>
+            <div className="text-xs mt-1.5 flex items-center gap-3">
+              <span className="text-gain font-medium">Status: LIVE ✅</span>
+              <span className="text-text-muted font-figures">Konto: {overview ? fmtUsd(overview.portfolio_value, 0) : "…"}</span>
+            </div>
+          </div>
+        </label>
+
+        <label
+          className={`flex items-start gap-2 px-3 py-2.5 rounded-card border cursor-pointer transition-colors ${
+            activeBroker === "ibkr" ? "border-gold bg-gold/5" : "border-border hover:border-border-accent/50"
+          } ${brokerMutation.isPending ? "opacity-60 pointer-events-none" : ""}`}
+        >
+          <input
+            type="radio" name="active-broker" className="mt-1 accent-gold"
+            checked={activeBroker === "ibkr"}
+            onChange={() => activeBroker !== "ibkr" && brokerMutation.mutate("ibkr")}
+          />
+          <div className="text-sm">
+            <div className="font-medium">Interactive Brokers</div>
+            <div className="text-xs text-text-muted mt-0.5">US + EU + Asien · Professionell</div>
+            <div className="text-xs mt-1.5 text-text-muted">Status: ⏳ Einzahlung ausstehend</div>
+          </div>
+        </label>
+      </div>
+
+      <div className="bg-bg-card border border-border rounded-card px-4 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">Alpaca Drain Mode</div>
+          <div className="text-xs text-text-muted mt-0.5">Keine neuen Alpaca-Käufe – bestehende Positionen laufen aus</div>
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
+          <span className={`text-xs font-semibold ${drainMode ? "text-orange-400" : "text-text-muted"}`}>
+            {drainMode ? "AN" : "AUS"}
+          </span>
+          <input
+            type="checkbox" checked={drainMode}
+            disabled={drainMutation.isPending}
+            onChange={(e) => drainMutation.mutate(e.target.checked)}
+          />
+        </label>
+      </div>
+
+      {drainMode && (
+        <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-card px-3 py-2 flex items-start gap-2">
+          <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+          <span>
+            Alpaca kauft keine neuen Positionen mehr.{" "}
+            {alpacaOpenTrades.length > 0
+              ? `Bestehende Positionen (${alpacaOpenTrades.map((t) => t.ticker).join(", ")}) laufen normal bis SL/TP/Time-Exit.`
+              : "Aktuell keine offenen Alpaca-Positionen."}
+          </span>
+        </div>
+      )}
+
+      {(brokerMutation.isError || drainMutation.isError) && (
+        <p className="text-xs text-loss">Speichern fehlgeschlagen.</p>
+      )}
+    </div>
+  );
+}
+
 function EntrySlotsSection() {
   const queryClient = useQueryClient();
 
@@ -314,6 +416,8 @@ export default function Einstellungen() {
           ))}
         </div>
       </div>
+
+      <BrokerConfigSection config={config} />
 
       <EntrySlotsSection />
     </div>

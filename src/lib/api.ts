@@ -46,6 +46,7 @@ export type OpenTrade = {
   trailing_sl_price: number | null;
   created_at: string;
   mode: TradingMode;
+  broker: string;
   current_price: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
@@ -108,6 +109,7 @@ export type ScanLogEntry = {
   trade_executed: boolean;
   mode: string;
   market_regime: MarketRegime | null;
+  broker: string;
 };
 
 export type ScanSlot = {
