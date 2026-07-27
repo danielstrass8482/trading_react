@@ -143,6 +143,26 @@ export type EntrySlot = {
   quelle: string;
 };
 
+export type TradeHistoryEntry = {
+  ticker: string;
+  direction: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss: number;
+  take_profit: number;
+  capital_used: number;
+  pnl_usd: number | null;
+  pnl_pct: number | null;
+  rule_score: number;
+  status: string;
+  broker: string;
+  mode: TradingMode;
+  created_at: string;
+  closed_at: string | null;
+  exit_grund: string;
+};
+
 export type LearningProposal = {
   index: number;
   typ: string;
