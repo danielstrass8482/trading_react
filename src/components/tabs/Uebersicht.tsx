@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Target, TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
 import { api, Overview } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
@@ -77,15 +77,22 @@ export default function Uebersicht() {
     return acc;
   }, {});
   const totalCapital = Object.values(sectorTotals).reduce((a, b) => a + b, 0);
+  const unrealizedPnl = data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <KPICard label="Portfolio-Wert" value={fmtUsd(data.portfolio_value, 2)} color="neutral" />
         <KPICard
           label="Realisierter P&L"
           value={fmtUsdSigned(data.realized_pnl, 2)}
           color={data.realized_pnl >= 0 ? "gain" : "loss"}
+        />
+        <KPICard
+          label="Unrealisierter P&L"
+          value={fmtUsdSigned(unrealizedPnl, 2)}
+          color={unrealizedPnl >= 0 ? "gain" : "loss"}
+          subtext="nicht realisiert"
         />
         <KPICard
           label="VIX"
@@ -151,17 +158,15 @@ export default function Uebersicht() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-figures text-text-muted">
                   <div>Entry: {fmtUsd(t.entry_price)}</div>
                   <div>Aktuell: {fmtUsd(t.current_price)}</div>
-                  <div>SL: {fmtUsd(t.stop_loss)}</div>
+                  <div className={t.trailing_sl_active ? "text-gold font-semibold" : undefined}>
+                    {t.trailing_sl_active ? "TSL" : "SL"}:{" "}
+                    {fmtUsd(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss)}
+                  </div>
                   <div>TP: {fmtUsd(t.take_profit)}</div>
                 </div>
                 <div className="text-xs text-text-muted mt-1.5">
                   {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
                 </div>
-                {t.trailing_sl_active && (
-                  <div className="flex items-center gap-1.5 text-xs text-gain mt-2">
-                    <Target size={13} /> Trailing SL aktiv: {fmtUsd(t.trailing_sl_price)}
-                  </div>
-                )}
               </div>
             ))}
           </div>
