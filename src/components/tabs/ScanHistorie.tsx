@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronRight, CheckCircle, XCircle,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
 } from "lucide-react";
-import { api, ScanDay, ScanLogEntry } from "@/lib/api";
+import { api, ScanDay, ScanLogEntry, ScanLogStat } from "@/lib/api";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
@@ -22,8 +22,9 @@ function checkCell(value: number | null) {
 
 function statusCell(row: ScanLogEntry) {
   if (row.ko_reason) {
+    const isFairValueKo = row.ko_reason.includes("Fair Value");
     return (
-      <span className="text-loss flex items-center gap-1.5">
+      <span className={`flex items-center gap-1.5 ${isFairValueKo ? "text-orange-400" : "text-loss"}`}>
         <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
       </span>
     );
@@ -112,6 +113,33 @@ function ScanSlotBlock({ day, slot, open, onToggle }: {
   );
 }
 
+function FilterStats({ stats }: { stats: ScanLogStat[] }) {
+  const total = stats.reduce((sum, s) => sum + s.anzahl, 0);
+  if (total === 0) return null;
+  const max = Math.max(...stats.map((s) => s.anzahl));
+  return (
+    <div className="bg-bg-card border border-border rounded-card px-4 py-3">
+      <div className="text-xs font-medium text-text-muted mb-2">
+        Filter-Statistik (letzte 30 Tage, {total} geblockt)
+      </div>
+      <div className="space-y-1.5">
+        {stats.map((s) => (
+          <div key={s.grund} className="flex items-center gap-2 text-sm">
+            <span className="w-32 shrink-0 text-text-primary">{s.grund}</span>
+            <div className="flex-1 bg-bg-app rounded-btn overflow-hidden h-2">
+              <div
+                className="h-full bg-gold"
+                style={{ width: `${(s.anzahl / max) * 100}%` }}
+              />
+            </div>
+            <span className="font-figures text-text-muted w-10 text-right">{s.anzahl}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function ScanHistorie() {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openSlots, setOpenSlots] = useState<Set<string>>(new Set());
@@ -121,6 +149,11 @@ export default function ScanHistorie() {
   const { data: days, isLoading, isError, refetch } = useQuery({
     queryKey: ["scan-log-grouped"],
     queryFn: () => api.get<ScanDay[]>("/api/scan-log", { params: { limit: 2000 } }).then((r) => r.data),
+  });
+
+  const { data: filterStats } = useQuery({
+    queryKey: ["scan-log-stats"],
+    queryFn: () => api.get<ScanLogStat[]>("/api/scan-log/stats").then((r) => r.data),
   });
 
   const { data: tickerDays } = useQuery({
@@ -174,6 +207,8 @@ export default function ScanHistorie() {
 
   return (
     <div className="space-y-4">
+      {filterStats && filterStats.length > 0 && <FilterStats stats={filterStats} />}
+
       <div>
         <input
           value={tickerFilter}

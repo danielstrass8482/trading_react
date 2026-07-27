@@ -79,6 +79,33 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
+      <AccordionSection title="Fair Value Filter">
+        <p>
+          Bevor eine technische Analyse überhaupt stattfindet, prüft der Bot in einer{" "}
+          <strong>zweistufigen Logik</strong>, ob ein Titel fundamental unterbewertet ist:
+        </p>
+        <ul className="space-y-1.5">
+          <li>
+            <strong>Stufe 1 – Gatekeeper (WAS kaufen?):</strong> Aus KGV, Cashflow und
+            Dividendenrendite wird wöchentlich ein grober Fair Value je Ticker berechnet und
+            zwischengespeichert. Liegt der aktuelle Kurs weniger als 10% unter diesem Fair
+            Value, wird der Kandidat sofort mit KO-Grund „Fair Value“ verworfen – noch bevor
+            teure Marktdaten geladen werden. Inverse ETFs haben kein KGV/Cashflow und sind
+            vom Gatekeeper ausgenommen.
+          </li>
+          <li>
+            <strong>Stufe 2 – Score-Bonus (WIE stark gewichten?):</strong> Besteht ein Titel
+            Stufe 1, fließt der Rabatt zusätzlich als Bonus von bis zu +10 Punkten in den
+            Signal-Score ein – je tiefer unterbewertet, desto höher der Bonus.
+          </li>
+        </ul>
+        <p>
+          Bei hohem Rabatt trotz schwacher Fundamentaldaten markiert der Bot ein „Value
+          Trap“-Risiko (niedrig/mittel/hoch) im Log – das blockiert den Trade nicht, dient
+          aber als zusätzlicher Hinweis.
+        </p>
+      </AccordionSection>
+
       <AccordionSection title="Einstiegszeitpunkte">
         <p>Statt einmal täglich zu scannen, prüft der Bot mehrere feste Zeitpunkte (Eastern Time):</p>
         <ul className="space-y-1.5">
@@ -91,6 +118,25 @@ export default function Dokumentation() {
         <p>
           Wie viele Trades an einem Tag insgesamt möglich sind, wird dynamisch aus freiem Kapital und
           freien Positionslimits berechnet und auf die verbleibenden Zeitpunkte des Tages verteilt.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Earnings-Filter">
+        <p>
+          Vor jedem Kauf prüft der Bot über den Earnings-Kalender, ob in den nächsten drei
+          Handelstagen eine Quartalszahl ansteht. Ist das der Fall, wird der Kandidat mit
+          KO-Grund „Earnings in X Tagen“ verworfen – Kursausschläge rund um Earnings sind
+          erratisch und lassen sich nicht sinnvoll mit ATR-basierten Stops absichern.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Korrelationsfilter">
+        <p>
+          Um Klumpenrisiko zu vermeiden, vergleicht der Bot einen Kandidaten mit allen
+          bereits offenen Positionen. Ist die Kursbewegung zu stark korreliert (z.B. zwei
+          Halbleiter-Titel oder zwei Bitcoin-Proxies gleichzeitig), wird der Kandidat mit
+          KO-Grund „Korrelationsfilter“ verworfen – auch wenn Score und Fair Value für sich
+          genommen passen würden.
         </p>
       </AccordionSection>
 
@@ -148,6 +194,65 @@ export default function Dokumentation() {
           ETFs +10 Punkte Bonus – der Bot verschiebt sein Verhalten also automatisch mit der Marktlage,
           statt stur in jede Richtung gleich zu handeln.
         </p>
+      </AccordionSection>
+
+      <AccordionSection title="Portfolio-Segmentierung">
+        <p>
+          Ein Teil der Watchlist gilt als besonders volatil (günstige Spekulationswerte,
+          gehebelte ETFs, Bitcoin-Proxies). Der Bot begrenzt den Anteil dieser Titel am
+          offenen Portfolio auf einen Zielwert (Standard 33%):
+        </p>
+        <ul className="space-y-1.5">
+          <li>
+            Liegt der volatile Anteil mehr als 15 Prozentpunkte über dem Ziel, wird ein
+            weiterer volatiler Kandidat blockiert („Volatile Segment voll“).
+          </li>
+          <li>
+            Liegt der Anteil unter dem Ziel, bekommt ein volatiler Kandidat +5 Punkte
+            Score-Bonus, damit das Segment tatsächlich befüllt wird.
+          </li>
+        </ul>
+        <p>
+          So bleibt das offene Portfolio bewusst gemischt aus stabilen und spekulativeren
+          Titeln, statt sich in eine Richtung zu verschieben.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Morning Brief E-Mail">
+        <p>
+          Täglich um 08:30 ET – vor dem ersten Einstiegszeitpunkt (09:45 ET) – erstellt eine
+          KI-Komponente ein kurzes Marktbriefing (max. 150 Wörter, Deutsch) auf Basis der
+          aktuellen Marktdaten und verschickt es per E-Mail. Ist kein LLM-API-Key konfiguriert,
+          verschickt der Bot stattdessen die reinen Marktdaten ohne KI-Kommentar
+          (Degraded Mode) – der Zyklus läuft unabhängig davon normal weiter.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Backlook-Lernzyklus">
+        <p>
+          Jeden Montag um 06:00 ET, vor dem ersten regulären Bot-Zyklus, wertet der Bot die
+          in der letzten Woche abgeschlossenen Trades statistisch aus – ohne LLM, rein
+          regelbasiert:
+        </p>
+        <ul className="space-y-1.5">
+          <li>
+            <strong>Score-Gewichtung:</strong> Kriterien, die bei Gewinnern hoch und bei
+            Verlierern niedrig gescort haben, bekommen mehr Gewicht, andere entsprechend
+            weniger. Maximal ±2 Punkte pro Kriterium und Lauf, jedes Kriterium bleibt
+            zwischen 5 und 35 Punkten, die Summe bleibt exakt 100. Erst ab 5 abgeschlossenen
+            Trades in der Woche wird überhaupt angepasst.
+          </li>
+          <li>
+            <strong>Einstiegszeitpunkt-Optimierung:</strong> Zeitslots, die auffällig besser
+            oder schlechter abschneiden als der Durchschnitt (ab 20% Abweichung, ab 5 Trades
+            pro Slot), werden in ihrer Gewichtung angepasst.
+          </li>
+          <li>
+            <strong>Slot-Cap-Evaluierung:</strong> Bei einer Trefferquote über 70% (ab 10
+            Trades) wird das maximale Trade-Limit eines Slots erhöht, bei unter 40% deutlich
+            reduziert oder deaktiviert.
+          </li>
+        </ul>
       </AccordionSection>
 
       <AccordionSection title="Risiken">

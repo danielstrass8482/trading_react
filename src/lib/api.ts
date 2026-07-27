@@ -126,6 +126,8 @@ export type ScanDay = {
   slots: ScanSlot[];
 };
 
+export type ScanLogStat = { grund: string; anzahl: number };
+
 export type BotConfigEntry = { key: string; value: string; beschreibung: string | null };
 
 export type EntrySlot = {
