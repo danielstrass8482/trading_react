@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle } from "lucide-react";
+import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info } from "lucide-react";
 import {
-  api, BotConfigEntry, EntrySlot, Overview, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
+  api, BotConfigEntry, EntrySlot, Overview, LearningProposal, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
@@ -33,6 +33,40 @@ const PRESETS: {
     values: { MAX_CAPITAL_PER_TRADE: "100", MAX_OPEN_POSITIONS: "8", ATR_MULTIPLIER_SL: "2.0", ATR_MULTIPLIER_TP: "4.0", MAX_HOLDING_DAYS: "7", VOLATILE_SEGMENT_PCT: "0.5" },
   },
 ];
+
+const GUARDRAIL_TOOLTIPS: Record<string, string> = {
+  MAX_CAPITAL_TOTAL: "Maximales Kapital das der Bot insgesamt einsetzen darf. Empfehlung: nur Kapital das du entbehren kannst.",
+  MAX_CAPITAL_PER_TRADE: "Maximaler Einsatz pro einzelnem Trade. Bei $50 und Score 80 kauft der Bot für $50.",
+  MAX_OPEN_POSITIONS: "Wie viele Trades gleichzeitig offen sein dürfen. Bei Erreichen werden keine neuen Käufe getätigt.",
+  MAX_TRADES_PER_DAY: "Maximale Anzahl neuer Käufe pro Handelstag. Wird dynamisch auf die Zeitslots verteilt.",
+  DAILY_LOSS_LIMIT_PCT: "Bot pausiert automatisch wenn der Tagesverlust diesen Prozentsatz des Gesamtkapitals erreicht.",
+  MIN_SIGNAL_SCORE: "Mindest-Score (0-100) den ein Ticker erreichen muss. Höher = konservativer. Standard: 65.",
+  VIX_PAUSE_THRESHOLD: "Bot pausiert wenn der VIX (Angst-Index der Börse) diesen Wert überschreitet. VIX >30 = hohe Volatilität.",
+  ATR_MULTIPLIER_SL: "Stop Loss = ATR × dieser Wert. ATR misst die typische Tagesschwankung. 1.5 = 1.5× normale Schwankung.",
+  ATR_MULTIPLIER_TP: "Take Profit = ATR × dieser Wert. Bei SL=1.5 und TP=3.0 ist das Chance-Risiko-Verhältnis 2:1.",
+  MAX_HOLDING_DAYS: "Position wird automatisch nach X Handelstagen verkauft. Verhindert totes Kapital in stagnierenden Positionen.",
+  VOLATILE_SEGMENT_PCT: "Anteil volatile Wachstumstitel am Portfolio. Rest = stabile Large Caps. 33% = ausgewogen.",
+  EARNINGS_BUFFER_DAYS: "Kein Kauf X Tage vor Quartalszahlen. Verhindert Gap-Risiko durch Earnings-Überraschungen.",
+};
+
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <div className="relative group inline-block">
+      <div
+        className="w-4 h-4 rounded-full border border-border flex items-center justify-center cursor-help
+                   text-text-muted hover:border-gold hover:text-gold transition-colors"
+      >
+        <Info size={10} />
+      </div>
+      <div
+        className="absolute bottom-6 right-0 z-50 hidden group-hover:block bg-bg-card border border-border
+                   rounded p-2 text-xs text-text-muted max-w-48 w-48 shadow-lg"
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
 
 const GUARDRAIL_KEYS = [
   "MAX_CAPITAL_TOTAL", "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
@@ -149,11 +183,14 @@ function GuardrailCard({ botKey, value, config }: { botKey: string; value: strin
     <div className="bg-bg-card border border-border rounded-card px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="text-text-muted text-xs">{label}</div>
-        {!editing && (
-          <button onClick={startEdit} className="text-text-muted hover:text-gold transition-colors" aria-label={`${label} bearbeiten`}>
-            <Pencil size={13} strokeWidth={1.5} />
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {GUARDRAIL_TOOLTIPS[botKey] && <InfoTooltip text={GUARDRAIL_TOOLTIPS[botKey]} />}
+          {!editing && (
+            <button onClick={startEdit} className="text-text-muted hover:text-gold transition-colors" aria-label={`${label} bearbeiten`}>
+              <Pencil size={13} strokeWidth={1.5} />
+            </button>
+          )}
+        </div>
       </div>
       {editing ? (
         <div className="mt-1">
@@ -239,19 +276,13 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
         </label>
 
         <label
-          className={`flex items-start gap-2 px-3 py-2.5 rounded-card border cursor-pointer transition-colors ${
-            activeBroker === "ibkr" ? "border-gold bg-gold/5" : "border-border hover:border-border-accent/50"
-          } ${brokerMutation.isPending ? "opacity-60 pointer-events-none" : ""}`}
+          className="flex items-start gap-2 px-3 py-2.5 rounded-card border border-border opacity-60 cursor-not-allowed"
         >
-          <input
-            type="radio" name="active-broker" className="mt-1 accent-gold"
-            checked={activeBroker === "ibkr"}
-            onChange={() => activeBroker !== "ibkr" && brokerMutation.mutate("ibkr")}
-          />
+          <input type="radio" name="active-broker" className="mt-1 accent-gold" disabled checked={false} readOnly />
           <div className="text-sm">
-            <div className="font-medium">Interactive Brokers</div>
-            <div className="text-xs text-text-muted mt-0.5">US + EU + Asien · Professionell</div>
-            <div className="text-xs mt-1.5 text-text-muted">Status: ⏳ Einzahlung ausstehend</div>
+            <div className="font-medium">Saxo Bank</div>
+            <div className="text-xs text-text-muted mt-0.5">Weltweit · US + EU + Asien</div>
+            <div className="text-xs mt-1.5 text-text-muted">Status: In Kürze verfügbar</div>
           </div>
         </label>
       </div>
@@ -383,6 +414,87 @@ function EntrySlotsSection() {
   );
 }
 
+const PROPOSAL_TYPE_LABELS: Record<string, string> = {
+  threshold_optimierung: "Score-Schwellwert-Optimierung",
+  watchlist_optimierung: "Watchlist-Optimierung",
+};
+
+function LearningProposalCard({ proposal }: { proposal: LearningProposal }) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (action: "accept" | "reject") =>
+      api.post(`/api/learning-proposals/${action}`, { index: proposal.index }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["learning-proposals"] }),
+  });
+
+  const typLabel = PROPOSAL_TYPE_LABELS[proposal.data.typ] ?? proposal.data.typ;
+
+  return (
+    <div className="bg-bg-card border border-border rounded-card px-4 py-3 space-y-2">
+      <div className="text-sm font-medium flex items-center gap-1.5">🧠 {typLabel}</div>
+
+      {proposal.data.aktuell !== undefined && proposal.data.empfohlen !== undefined && (
+        <p className="text-xs font-figures text-text-muted">
+          Aktuell: {proposal.data.aktuell} → Empfohlen: <span className="text-gold">{proposal.data.empfohlen}</span>
+        </p>
+      )}
+      {proposal.data.begruendung && <p className="text-xs text-text-muted">{proposal.data.begruendung}</p>}
+      {proposal.data.vorschlaege && (
+        <ul className="text-xs text-text-muted space-y-1">
+          {proposal.data.vorschlaege.map((v) => (
+            <li key={v.ticker}>
+              <strong className="text-text-primary">{v.ticker}</strong> entfernen – {v.begruendung}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => mutation.mutate("accept")}
+          disabled={mutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-btn bg-gold/10 text-gold border border-gold/30 hover:bg-gold/20 transition-colors disabled:opacity-50"
+        >
+          Übernehmen
+        </button>
+        <button
+          onClick={() => mutation.mutate("reject")}
+          disabled={mutation.isPending}
+          className="text-xs px-3 py-1.5 rounded-btn border border-border text-text-muted hover:border-loss/50 hover:text-loss transition-colors disabled:opacity-50"
+        >
+          Ablehnen
+        </button>
+      </div>
+      {mutation.isError && <p className="text-xs text-loss">Aktion fehlgeschlagen.</p>}
+    </div>
+  );
+}
+
+function LearningProposalsSection() {
+  const { data: proposals = [], isLoading } = useQuery({
+    queryKey: ["learning-proposals"],
+    queryFn: () => api.get<LearningProposal[]>("/api/learning-proposals").then((r) => r.data),
+  });
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">KI-Lernvorschläge</h3>
+      {isLoading ? (
+        <CardSkeleton className="h-20" />
+      ) : proposals.length === 0 ? (
+        <p className="text-xs text-text-muted">Noch keine Vorschläge – nächster Lernzyklus: montags 06:00 ET.</p>
+      ) : (
+        <div className="space-y-3">
+          {proposals.map((p) => (
+            <LearningProposalCard key={p.index} proposal={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Einstellungen() {
   const { data: configList, isLoading, isError, refetch } = useQuery({
     queryKey: ["bot-config"],
@@ -420,6 +532,8 @@ export default function Einstellungen() {
       <BrokerConfigSection config={config} />
 
       <EntrySlotsSection />
+
+      <LearningProposalsSection />
     </div>
   );
 }

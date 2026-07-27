@@ -48,14 +48,14 @@ function BrokerStatus({ overview, cfg }: { overview?: Overview; cfg: Record<stri
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "ibkr" ? "text-gold" : "text-text-muted"}`}>
-              <span className={activeBroker === "ibkr" ? "text-gold" : "text-text-disabled"}>●</span> IBKR
+            <span className="flex items-center gap-1.5 font-medium text-text-muted">
+              <span className="text-text-disabled">●</span> SAXO
             </span>
             <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-text-muted/20 text-text-muted">
-              Pending
+              Demnächst
             </span>
           </div>
-          <div className="text-text-muted mt-0.5">Konto: – (Einzahlung ausstehend)</div>
+          <div className="text-text-muted mt-0.5">In Kürze verfügbar</div>
         </div>
       </div>
     </div>

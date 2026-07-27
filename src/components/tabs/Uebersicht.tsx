@@ -17,8 +17,8 @@ const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> =
 function brokerBadge(broker: string | null | undefined) {
   const b = (broker ?? "alpaca").toLowerCase();
   return (
-    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "ibkr" ? "bg-paper/20 text-paper" : "bg-gold/20 text-gold"}`}>
-      {b === "ibkr" ? "IBKR" : "ALPACA"}
+    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
+      {b.toUpperCase()}
     </span>
   );
 }

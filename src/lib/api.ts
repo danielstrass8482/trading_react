@@ -143,6 +143,20 @@ export type EntrySlot = {
   quelle: string;
 };
 
+export type LearningProposal = {
+  index: number;
+  typ: string;
+  erstellt: string;
+  status: string;
+  data: {
+    typ: string;
+    aktuell?: number;
+    empfohlen?: number;
+    begruendung?: string;
+    vorschlaege?: { ticker: string; aktion: string; begruendung: string }[];
+  };
+};
+
 // Guardrail-Keys → deutsche Labels + Formatierungsregel, identisch zum
 // Pendant in portfolio_react/src/lib/api.ts (gleiche bot_config-Keys).
 export const GUARDRAIL_LABELS: Record<string, { label: string; format: "pct" | "usd" | "int" }> = {

@@ -16,10 +16,11 @@ const FAQ: { frage: string; antwort: string }[] = [
   { frage: "Wird wirklich echtes Geld eingesetzt?", antwort: "Ja. Der Bot handelt live über Alpaca Markets – jede Order bewegt echtes Kapital." },
   { frage: "Wie oft handelt der Bot?", antwort: "Zu mehreren festen Zeitpunkten pro Handelstag (siehe „Einstiegszeitpunkte“), begrenzt durch freies Kapital und offene Positionslimits." },
   { frage: "Was passiert bei starker Marktangst (hoher VIX)?", antwort: "Übersteigt der VIX den konfigurierten Schwellwert, pausiert der Bot komplett und eröffnet keine neuen Positionen." },
-  { frage: "Kann ich den Bot pausieren?", antwort: "Ja. Bestehende Positionen laufen mit SL/TP/Trailing Stop regulär weiter, bis sie geschlossen werden." },
+  { frage: "Kann ich den Bot pausieren?", antwort: "Ja, per Broker-Drain-Mode im Einstellungen-Tab. Bestehende Positionen laufen mit SL/TP/Trailing Stop regulär weiter, bis sie geschlossen werden." },
   { frage: "Was passiert bei Erreichen des täglichen Verlustlimits?", antwort: "Der Bot pausiert automatisch und handelt erst nach manueller Freigabe wieder." },
   { frage: "Kann ich die Einstellungen ändern?", antwort: "Ja, im Tab „Einstellungen“ – Änderungen wirken ab dem nächsten Bot-Zyklus, ohne Neustart." },
   { frage: "Handelt der Bot auch, wenn der Markt fällt?", antwort: "Der Bot erkennt das Marktregime (bullish/bearish/neutral) und bevorzugt in einem bärischen Umfeld inverse ETFs gegenüber klassischen Long-Aktien." },
+  { frage: "Trifft der Bot eigenständig Lernentscheidungen?", antwort: "Nein. Der wöchentliche Lernzyklus schlägt Anpassungen nur vor – jeder Vorschlag muss im Einstellungen-Tab manuell übernommen oder abgelehnt werden." },
 ];
 
 function AccordionSection({
@@ -46,13 +47,25 @@ export default function Dokumentation() {
   return (
     <div className="space-y-3">
       <AccordionSection title="Wie funktioniert der Bot?" defaultOpen>
-        <p>
-          Der Bot durchläuft an jedem Handelstag mehrere feste Zyklen. In jedem Zyklus wird die
-          Watchlist gescannt, für jeden Ticker ein Signal-Score berechnet und geprüft, ob KO-Kriterien
-          (bevorstehende Earnings, zu starke Kursbewegung, zu hohe Korrelation mit einer bereits offenen
-          Position) einen Kauf ausschließen. Nur Kandidaten mit Score ≥ 65/100, ohne KO-Kriterium und
-          innerhalb der Kapital- und Positionslimits werden tatsächlich gekauft.
-        </p>
+        <p>Der Bot arbeitet mit einer zweistufigen Analyse:</p>
+        <ul className="space-y-1.5">
+          <li>
+            <strong>Stufe 1 – Fair Value Filter (wöchentlich, montags):</strong> Die gesamte
+            Watchlist (rund 390 Ticker) wird auf fundamentale Bewertung geprüft. Der Fair Value
+            je Ticker wird über KGV, KCV und Dividendenrendite berechnet – mit sektorspezifischen
+            Multiples (Tech wird anders bewertet als Utilities). Nur Titel mit mindestens 10%
+            Rabatt zum Fair Value kommen in die engere Auswahl; das verhindert den Kauf bereits
+            überbewerteter Titel, bevor überhaupt eine technische Analyse stattfindet.
+          </li>
+          <li>
+            <strong>Stufe 2 – Technischer Score (täglich, parallel):</strong> Die verbleibenden
+            Titel werden gleichzeitig analysiert (15 parallele Worker). Acht Faktoren fließen ein:
+            RSI, SMA-Trend, Volumen, KGV, Verschuldungsgrad und Umsatzwachstum ergeben zusammen
+            einen gewichteten Basis-Score (0–100 Punkte); Markt-Regime und Korrelationsfilter
+            passen diesen Score zusätzlich modifizierend an bzw. blocken einen Kandidaten komplett.
+            Nur ein Score ≥ 65/100 kommt in die engere Auswahl.
+          </li>
+        </ul>
         <p>
           Eine KI-Komponente (Claude) kommentiert jeden ausgeführten Trade nachträglich mit einer
           kurzen Einschätzung und zwei qualitativen Risiken – trifft aber keine Kauf- oder
@@ -60,8 +73,8 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Signal-Score">
-        <p>Der Score setzt sich aus sechs gewichteten Kriterien zusammen und ergibt in Summe maximal 100 Punkte:</p>
+      <AccordionSection title="Signal-Score im Detail">
+        <p>Der technische Basis-Score setzt sich aus sechs gewichteten Kriterien zusammen und ergibt in Summe maximal 100 Punkte:</p>
         <div className="divide-y divide-border/50 border border-border rounded-card overflow-hidden">
           {SCORE_WEIGHTS.map((w) => (
             <div key={w.name} className="flex items-start gap-3 px-3 py-2.5 bg-bg-app">
@@ -74,8 +87,26 @@ export default function Dokumentation() {
           ))}
         </div>
         <p>
-          Ein wöchentlicher „Backlook“-Lauf wertet abgeschlossene Trades aus und passt jedes Kriterium
+          Der wöchentliche Lernzyklus wertet abgeschlossene Trades aus und passt jedes Kriterium
           um maximal ±2 Punkte an – die Summe bleibt dabei immer bei 100.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Einstiegszeitpunkte">
+        <p>5 feste Zeitpunkte pro Handelstag (Eastern Time):</p>
+        <ul className="space-y-1.5">
+          <li><strong className="font-figures">09:45 ET</strong> – max. 1 Trade, um die erste Opening-Volatilität zu vermeiden.</li>
+          <li><strong className="font-figures">10:30 ET</strong> – max. 1 Trade, konservativ.</li>
+          <li><strong className="font-figures">12:00 ET</strong> – Restbudget dynamisch verteilt.</li>
+          <li><strong className="font-figures">14:00 ET</strong> – Restbudget dynamisch verteilt.</li>
+          <li><strong className="font-figures">15:00 ET</strong> – Restbudget dynamisch verteilt.</li>
+        </ul>
+        <p>
+          Wie viele Trades an einem Tag insgesamt möglich sind, wird dynamisch aus freiem Kapital
+          und freien Positionslimits berechnet und auf die verbleibenden Zeitpunkte des Tages
+          verteilt. Der Bot lernt wöchentlich, welche Slots am besten performen, und passt deren
+          Gewichtung entsprechend an. Von Guardrails geblockte Kandidaten verbrauchen dabei keinen
+          Slot – nur tatsächlich ausgeführte Trades zählen gegen das Tageslimit.
         </p>
       </AccordionSection>
 
@@ -106,101 +137,83 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Einstiegszeitpunkte">
-        <p>Statt einmal täglich zu scannen, prüft der Bot mehrere feste Zeitpunkte (Eastern Time):</p>
-        <ul className="space-y-1.5">
-          <li><strong className="font-figures">09:45 ET</strong> – nach Abklingen der ersten Opening-Volatilität.</li>
-          <li><strong className="font-figures">10:30 ET</strong> – historisch der stärkste Zeitpunkt, entsprechend höher gewichtet.</li>
-          <li><strong className="font-figures">12:00 ET</strong> – Mittagskonsolidierung, bewusst geringeres Budget.</li>
-          <li><strong className="font-figures">14:00 ET</strong> – vor der letzten Handelsstunde.</li>
-          <li><strong className="font-figures">15:00 ET</strong> – kurz vor Handelsschluss, vorsichtig dosiert.</li>
-        </ul>
-        <p>
-          Wie viele Trades an einem Tag insgesamt möglich sind, wird dynamisch aus freiem Kapital und
-          freien Positionslimits berechnet und auf die verbleibenden Zeitpunkte des Tages verteilt.
-        </p>
-      </AccordionSection>
-
-      <AccordionSection title="Earnings-Filter">
-        <p>
-          Vor jedem Kauf prüft der Bot über den Earnings-Kalender, ob in den nächsten drei
-          Handelstagen eine Quartalszahl ansteht. Ist das der Fall, wird der Kandidat mit
-          KO-Grund „Earnings in X Tagen“ verworfen – Kursausschläge rund um Earnings sind
-          erratisch und lassen sich nicht sinnvoll mit ATR-basierten Stops absichern.
-        </p>
-      </AccordionSection>
-
-      <AccordionSection title="Korrelationsfilter">
-        <p>
-          Um Klumpenrisiko zu vermeiden, vergleicht der Bot einen Kandidaten mit allen
-          bereits offenen Positionen. Ist die Kursbewegung zu stark korreliert (z.B. zwei
-          Halbleiter-Titel oder zwei Bitcoin-Proxies gleichzeitig), wird der Kandidat mit
-          KO-Grund „Korrelationsfilter“ verworfen – auch wenn Score und Fair Value für sich
-          genommen passen würden.
-        </p>
-      </AccordionSection>
-
       <AccordionSection title="Stop Loss & Take Profit">
         <p>
-          Statt fester Prozentwerte berechnet der Bot Stop Loss und Take Profit anhand der{" "}
-          <strong>Average True Range (ATR)</strong> – der durchschnittlichen Tagesschwankung eines
-          Titels über die letzten 14 Handelstage. Volatilere Aktien bekommen automatisch einen weiteren
-          Abstand, ruhigere Aktien einen engeren.
+          Nicht starr, sondern dynamisch: Statt fester Prozentwerte berechnet der Bot Stop Loss
+          und Take Profit anhand der <strong>Average True Range (ATR)</strong> – der
+          durchschnittlichen Tagesschwankung eines Titels über die letzten 14 Handelstage.
         </p>
         <ul className="space-y-1.5">
-          <li>Stop Loss = aktueller Kurs − (ATR × Multiplikator, Standard 1,5)</li>
-          <li>Take Profit = aktueller Kurs + (ATR × Multiplikator, Standard 3,0 – Chance-Risiko 2:1)</li>
+          <li>Stop Loss = ATR × 1,5 (begrenzt auf min. 1%, max. 8%)</li>
+          <li>Take Profit = ATR × 3,0 (Chance-Risiko-Verhältnis 2:1)</li>
         </ul>
         <p>
-          Als Sicherheitsnetz wird der Stop Loss immer auf 1–8% begrenzt. Ist die ATR ausnahmsweise
-          nicht verfügbar, fällt der Bot auf feste Prozentwerte zurück.
+          Ruhige Aktien bekommen dadurch automatisch einen engeren Stop (kapitalschonend), volatile
+          Aktien einen weiteren Stop (kein vorzeitiges Rauswerfen durch normales Rauschen). Ist die
+          ATR ausnahmsweise nicht verfügbar, fällt der Bot auf feste Prozentwerte zurück.
         </p>
       </AccordionSection>
 
       <AccordionSection title="Trailing Stop">
         <p>
-          Erreicht eine Position ihr Take-Profit-Ziel, verkauft der Bot nicht sofort, sondern aktiviert
-          einen Trailing Stop: Der Stop Loss wird auf „Höchstkurs seit Kauf minus ATR × Multiplikator“
-          gesetzt und bei jedem neuen Hoch automatisch nachgezogen – er kann nur steigen, nie fallen.
+          Nach dem ersten erreichten Take Profit verkauft der Bot nicht sofort fest, sondern
+          aktiviert einen Trailing Stop Loss: Er wird auf „Höchstkurs seit Kauf minus ATR ×
+          Multiplikator“ gesetzt und bei jedem neuen Hoch automatisch nachgezogen – er kann nur
+          steigen, nie fallen. So darf ein Gewinner weiterlaufen, während die bereits erzielten
+          Gewinne zunehmend abgesichert werden.
         </p>
+        <p>Fällt der Kurs unter diesen nachgezogenen Stop, wird die Position verkauft.</p>
+      </AccordionSection>
+
+      <AccordionSection title="Time-Based Exit">
         <p>
-          Fällt der Kurs unter diesen nachgezogenen Stop, wird verkauft. Unabhängig davon wird jede
-          Position spätestens nach einer maximalen Haltedauer (Standard 5 Handelstage) automatisch
-          geschlossen.
+          Unabhängig von SL/TP/Trailing wird jede Position spätestens nach 5 Handelstagen
+          automatisch geschlossen (konfigurierbar, 3–7 Tage). Das verhindert totes Kapital in
+          Positionen, die seitwärts laufen, ohne SL oder TP zu erreichen.
         </p>
       </AccordionSection>
 
       <AccordionSection title="Markt-Regime Filter">
         <p>
-          Der Bot bestimmt anhand des S&amp;P 500 (Kurs vs. SMA50/SMA200) ein aktuelles Marktregime:
-          bullish, bearish oder neutral.
+          Täglich vergleicht der Bot den S&amp;P 500 mit seinem SMA50/SMA200 und bestimmt daraus
+          ein aktuelles Marktregime:
         </p>
         <ul className="space-y-1.5">
           <li className="flex items-center gap-1.5">
             <TrendingUp size={16} strokeWidth={1.5} className="text-gain shrink-0" />
-            <strong>Bullish</strong> – Kurs über SMA200, SMA50 über SMA200.
+            <strong>Bullish</strong> – normale Long-Strategie.
           </li>
           <li className="flex items-center gap-1.5">
             <TrendingDown size={16} strokeWidth={1.5} className="text-loss shrink-0" />
-            <strong>Bearish</strong> – Kurs unter SMA200, SMA50 unter SMA200.
+            <strong>Bearish</strong> – Score-Abzug für Long-Aktien, Bonus für inverse ETFs.
           </li>
           <li className="flex items-center gap-1.5">
             <Minus size={16} strokeWidth={1.5} className="text-text-muted shrink-0" />
-            <strong>Neutral</strong> – alles dazwischen.
+            <strong>Neutral</strong> – ausgewogen, keine Anpassung.
           </li>
         </ul>
         <p>
           In einem bärischen Regime bekommen klassische Long-Aktien −10 Punkte Score-Abzug, inverse
-          ETFs +10 Punkte Bonus – der Bot verschiebt sein Verhalten also automatisch mit der Marktlage,
-          statt stur in jede Richtung gleich zu handeln.
+          ETFs +10 Punkte Bonus – der Bot verschiebt sein Verhalten also automatisch mit der
+          Marktlage, statt stur in jede Richtung gleich zu handeln.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Korrelationsfilter">
+        <p>
+          Der Bot lässt keine zwei Positionen mit mehr als 0,8 Korrelation gleichzeitig offen. Ist
+          die 3-Monats-Kursbewegung eines Kandidaten zu stark mit einer bereits offenen Position
+          korreliert (z.B. zwei Halbleiter-Titel oder zwei Bitcoin-Proxies gleichzeitig), wird der
+          Kandidat mit KO-Grund „Korrelationsfilter“ verworfen – auch wenn Score und Fair Value für
+          sich genommen passen würden. Das verhindert Klumpenrisiko im Portfolio.
         </p>
       </AccordionSection>
 
       <AccordionSection title="Portfolio-Segmentierung">
         <p>
-          Ein Teil der Watchlist gilt als besonders volatil (günstige Spekulationswerte,
-          gehebelte ETFs, Bitcoin-Proxies). Der Bot begrenzt den Anteil dieser Titel am
-          offenen Portfolio auf einen Zielwert (Standard 33%):
+          Das Portfolio wird bewusst gemischt gehalten: 67% stabile Large Caps (S&amp;P-500-Titel)
+          und 33% volatile Wachstumstitel (günstige Spekulationswerte, gehebelte ETFs,
+          Bitcoin-Proxies).
         </p>
         <ul className="space-y-1.5">
           <li>
@@ -209,49 +222,59 @@ export default function Dokumentation() {
           </li>
           <li>
             Liegt der Anteil unter dem Ziel, bekommt ein volatiler Kandidat +5 Punkte
-            Score-Bonus, damit das Segment tatsächlich befüllt wird.
+            Score-Bonus, damit das Segment automatisch wieder aufgefüllt wird.
           </li>
         </ul>
         <p>
-          So bleibt das offene Portfolio bewusst gemischt aus stabilen und spekulativeren
-          Titeln, statt sich in eine Richtung zu verschieben.
+          So bleibt das offene Portfolio automatisch balanciert, statt sich einseitig in eine
+          Richtung zu verschieben.
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Morning Brief E-Mail">
+      <AccordionSection title="Earnings-Filter">
+        <p>
+          Vor jedem Kauf prüft der Bot über den Earnings-Kalender, ob in den nächsten drei
+          Handelstagen eine Quartalszahl ansteht. Ist das der Fall, wird der Kandidat mit
+          KO-Grund „Earnings in X Tagen“ verworfen – Kursausschläge rund um Earnings sind
+          erratisch (Gap-Risiko) und lassen sich nicht sinnvoll mit ATR-basierten Stops
+          absichern. Die Daten kommen über die yfinance Calendar API.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Morning Brief">
         <p>
           Täglich um 08:30 ET – vor dem ersten Einstiegszeitpunkt (09:45 ET) – erstellt eine
-          KI-Komponente ein kurzes Marktbriefing (max. 150 Wörter, Deutsch) auf Basis der
-          aktuellen Marktdaten und verschickt es per E-Mail. Ist kein LLM-API-Key konfiguriert,
-          verschickt der Bot stattdessen die reinen Marktdaten ohne KI-Kommentar
-          (Degraded Mode) – der Zyklus läuft unabhängig davon normal weiter.
+          KI-Komponente ein kurzes Marktbriefing (Deutsch) auf Basis von VIX, S&amp;P 500,
+          Nasdaq und Markt-Regime und verschickt es per E-Mail: worauf heute zu achten ist. Ist
+          kein LLM-API-Key konfiguriert, verschickt der Bot stattdessen die reinen Marktdaten
+          ohne KI-Kommentar (Degraded Mode) – der Zyklus läuft unabhängig davon normal weiter.
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Backlook-Lernzyklus">
+      <AccordionSection title="Wöchentlicher Lernzyklus (montags)">
         <p>
-          Jeden Montag um 06:00 ET, vor dem ersten regulären Bot-Zyklus, wertet der Bot die
-          in der letzten Woche abgeschlossenen Trades statistisch aus – ohne LLM, rein
-          regelbasiert:
+          Jeden Montag, vor dem ersten regulären Bot-Zyklus, wertet der Bot die
+          abgeschlossenen Trades der letzten Wochen statistisch aus – ohne LLM, rein
+          regelbasiert. Er analysiert dabei fünf Fragen:
         </p>
         <ul className="space-y-1.5">
-          <li>
-            <strong>Score-Gewichtung:</strong> Kriterien, die bei Gewinnern hoch und bei
-            Verlierern niedrig gescort haben, bekommen mehr Gewicht, andere entsprechend
-            weniger. Maximal ±2 Punkte pro Kriterium und Lauf, jedes Kriterium bleibt
-            zwischen 5 und 35 Punkten, die Summe bleibt exakt 100. Erst ab 5 abgeschlossenen
-            Trades in der Woche wird überhaupt angepasst.
-          </li>
-          <li>
-            <strong>Einstiegszeitpunkt-Optimierung:</strong> Zeitslots, die auffällig besser
-            oder schlechter abschneiden als der Durchschnitt (ab 20% Abweichung, ab 5 Trades
-            pro Slot), werden in ihrer Gewichtung angepasst.
-          </li>
-          <li>
-            <strong>Slot-Cap-Evaluierung:</strong> Bei einer Trefferquote über 70% (ab 10
-            Trades) wird das maximale Trade-Limit eines Slots erhöht, bei unter 40% deutlich
-            reduziert oder deaktiviert.
-          </li>
+          <li><strong>Welche Zeitslots performen am besten?</strong> Slot-Gewichtung wird entsprechend angepasst.</li>
+          <li><strong>Welcher Score-Schwellwert war optimal?</strong> Mehrere Schwellwerte (55–75) werden gegen die tatsächliche Performance abgeschlossener Trades getestet.</li>
+          <li><strong>Welche Ticker performen konstant schlecht?</strong> Titel mit negativem Ø-P&amp;L und niedriger Trefferquote über die letzten 90 Tage werden zur Entfernung aus der Watchlist vorgeschlagen.</li>
+          <li><strong>Sektor-Rotation:</strong> Welche Branchen liefen zuletzt besser oder schlechter?</li>
+          <li><strong>Saisonalität:</strong> Welche Wochentage performen konstant besser oder schlechter?</li>
+        </ul>
+        <p>
+          Der Bot setzt nichts davon eigenständig um – jeder Lernvorschlag erscheint im
+          Einstellungen-Tab unter „KI-Lernvorschläge“ und muss dort manuell bestätigt oder
+          abgelehnt werden.
+        </p>
+      </AccordionSection>
+
+      <AccordionSection title="Unterstützte Broker">
+        <ul className="space-y-1.5">
+          <li><strong>Alpaca Markets</strong> – US-Aktien, Fractional Shares. Aktiv, Standard-Broker.</li>
+          <li><strong>Saxo Bank</strong> – weltweit (US, EU, Asien). Demnächst verfügbar.</li>
         </ul>
       </AccordionSection>
 
@@ -259,12 +282,12 @@ export default function Dokumentation() {
         <div className="bg-loss/10 border border-loss/30 rounded-card px-4 py-4 flex gap-3">
           <AlertTriangle className="text-loss shrink-0 mt-0.5" size={20} />
           <div className="space-y-1.5">
-            <p className="font-medium text-loss">Wichtige Risikohinweise:</p>
+            <p className="font-medium text-loss">Der Bot ist kein Finanzberater.</p>
             <ul className="space-y-1 text-text-primary">
-              <li>Du kannst dein eingesetztes Kapital verlieren.</li>
-              <li>Vergangene Performance ist kein Indikator für zukünftige Ergebnisse.</li>
+              <li>Du kannst dein Kapital vollständig verlieren.</li>
+              <li>Vergangene Performance garantiert keine zukünftigen Ergebnisse.</li>
+              <li>Overnight-Gap-Risiko besteht: Bei Börsenschluss können Kurse springen, bevor SL/TP greifen kann.</li>
               <li>Der Bot reagiert nicht auf unvorhergesehene Marktereignisse.</li>
-              <li>Overnight-Gap-Risiko: Bei Börsenschluss können Kurse springen, bevor SL/TP greifen kann.</li>
               <li>Kein Ersatz für professionelle Anlageberatung.</li>
               <li>Die steuerliche Behandlung von Gewinnen liegt beim Nutzer.</li>
             </ul>
