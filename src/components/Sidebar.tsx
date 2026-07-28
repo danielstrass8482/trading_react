@@ -5,6 +5,7 @@ import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen,
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
 import { logout } from "@/lib/auth";
+import MarketStatus from "@/components/MarketStatus";
 
 export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "einstellungen" | "dokumentation";
 
@@ -124,7 +125,10 @@ export default function Sidebar({
       </nav>
 
       <div className="mt-auto pt-6 border-t border-border">
-        <div className="flex items-center justify-between px-2 mb-3">
+        <div className="px-2 mb-2 text-xs uppercase tracking-wider text-text-muted">Marktzeiten</div>
+        <MarketStatus />
+
+        <div className="flex items-center justify-between px-2 mb-3 mt-4 pt-4 border-t border-border">
           <span className="text-xs uppercase tracking-wider text-text-muted">Bot-Status</span>
           <span
             className={`text-[0.7rem] font-semibold px-2 py-0.5 rounded-btn flex items-center gap-1 ${
@@ -142,8 +146,7 @@ export default function Sidebar({
               {overview.open_trades.length}/{overview.max_open_positions}
             </div>
             <div>
-              SL: ~{fmtGuardrailValue("STOP_LOSS_PCT", cfg.STOP_LOSS_PCT ?? "0")} | TP: ~
-              {fmtGuardrailValue("TAKE_PROFIT_PCT", cfg.TAKE_PROFIT_PCT ?? "0")}
+              SL/TP: <span title="ATR-adaptiv – Distanz richtet sich nach der Volatilität des jeweiligen Tickers, kein fester Prozentsatz. Details siehe Einstellungen.">ATR-adaptiv</span>
             </div>
             <div className="flex items-center gap-1">
               Regime:
@@ -208,6 +211,12 @@ export default function Sidebar({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
+
+          <div className="mb-3 pb-3 border-b border-border">
+            <div className="px-3 mb-2 text-xs uppercase tracking-wider text-text-muted">Marktzeiten</div>
+            <MarketStatus />
+          </div>
+
           <button
             onClick={() => {
               onSelect("dokumentation");
