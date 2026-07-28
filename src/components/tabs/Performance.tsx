@@ -3,11 +3,14 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry } from "@/lib/api";
+import {
+  api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry,
+  SaxoTradeEntry, SaxoOverview, CombinedTradeEntry, fromAlpacaTrade, fromSaxoTrade,
+} from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtUsd, fmtUsdSigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
+import { fmtUsd, fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
 
 const PERIODS = [
   { key: "1w", label: "1W", days: 7 },
@@ -42,20 +45,72 @@ function formatDatum(iso: string): string {
   return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }
 
+const BROKER_FILTERS = [
+  { key: "alle", label: "Alle" },
+  { key: "alpaca", label: "Alpaca" },
+  { key: "saxo", label: "Saxo" },
+] as const;
+
+function brokerBadgeSmall(broker: "alpaca" | "saxo") {
+  return (
+    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${broker === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
+      {broker.toUpperCase()}
+    </span>
+  );
+}
+
 function TradeHistorySection() {
-  const { data: history = [], isLoading } = useQuery({
-    queryKey: ["trade-history"],
+  const [brokerFilter, setBrokerFilter] = useState<(typeof BROKER_FILTERS)[number]["key"]>("alle");
+
+  const { data: alpacaHistory = [], isLoading: alpacaLoading } = useQuery({
+    queryKey: ["trade-history", "alpaca"],
     queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { limit: 50 } }).then((r) => r.data),
   });
 
-  // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl_usd
-  // ist für OPEN-Trades unverändert NULL, siehe trading_api.get_trade_history) –
-  // das ist weiterhin der realisierte P&L, keine Änderung an dieser Definition.
-  const closed = history.filter((t) => t.pnl_usd !== null);
+  // Saxo bewusst nicht Teil des Loading-Gates – fällt die Saxo-API aus,
+  // zeigt die Tabelle einfach nur die Alpaca-Historie (siehe saxoError unten).
+  const { data: saxoHistory = [], isLoading: saxoLoading, isError: saxoError } = useQuery({
+    queryKey: ["trade-history", "saxo"],
+    queryFn: () => api.get<SaxoTradeEntry[]>("/api/saxo/trades/history", { params: { limit: 50 } }).then((r) => r.data),
+  });
+
+  // fx_rates_to_eur fürs Umrechnen des kombinierten P&L in der Kopfzeile
+  // (siehe Uebersicht.tsx – gleiches Prinzip: Alpaca USD + Saxo EUR/GBP
+  // lassen sich nicht ungewandelt addieren).
+  const { data: saxoOverview } = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
+  });
+
+  const isLoading = alpacaLoading || saxoLoading;
+
+  const merged = useMemo(() => {
+    const combined: CombinedTradeEntry[] = [
+      ...alpacaHistory.map(fromAlpacaTrade),
+      ...saxoHistory.map(fromSaxoTrade),
+    ];
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return combined;
+  }, [alpacaHistory, saxoHistory]);
+
+  const history = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
+
+  // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl ist
+  // für OPEN-Trades unverändert NULL, siehe trading_api(_saxo).py) – das ist
+  // weiterhin der realisierte P&L, keine Änderung an dieser Definition. Die
+  // Summe wird als EUR-Näherung angezeigt sobald mehr als eine Währung
+  // vorkommt (Alpaca=USD, Saxo=EUR/GBP je nach Börse).
+  const closed = history.filter((t) => t.pnl !== null);
   const offen = history.filter((t) => t.status === "OPEN");
-  const gewinner = closed.filter((t) => (t.pnl_usd ?? 0) > 0).length;
-  const verlierer = closed.filter((t) => (t.pnl_usd ?? 0) <= 0).length;
-  const gesamtPnl = closed.reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
+  const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;
+  const verlierer = closed.filter((t) => (t.pnl ?? 0) <= 0).length;
+
+  const fxRates = saxoOverview?.fx_rates_to_eur;
+  const gesamtPnlEur = fxRates
+    ? closed.reduce((sum, t) => sum + (t.pnl ?? 0) * (fxRates[t.currency] ?? 1), 0)
+    : null;
+  const singleCurrency = closed.length > 0 && closed.every((t) => t.currency === closed[0].currency) ? closed[0].currency : null;
+  const gesamtPnlNative = singleCurrency ? closed.reduce((sum, t) => sum + (t.pnl ?? 0), 0) : null;
 
   return (
     <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
@@ -63,16 +118,41 @@ function TradeHistorySection() {
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
           Handelshistorie
         </div>
-        {!isLoading && history.length > 0 && (
-          <div className="text-xs text-text-muted font-figures flex flex-wrap gap-x-3 gap-y-1">
-            {offen.length > 0 && <span className="text-paper">Offen: {offen.length}</span>}
-            <span>Geschlossen: {closed.length}</span>
-            <span className="text-gain">Gewinner: {gewinner}</span>
-            <span className="text-loss">Verlierer: {verlierer}</span>
-            <span className={gainLossClass(gesamtPnl)}>P&L: {fmtUsdSigned(gesamtPnl)}</span>
-          </div>
-        )}
+        <div className="flex gap-1">
+          {BROKER_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setBrokerFilter(f.key)}
+              className={`text-xs px-2.5 py-1 rounded-btn transition-colors ${
+                brokerFilter === f.key ? "bg-gold text-bg-app font-medium" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {saxoError && (
+        <p className="text-xs text-loss mb-2">Saxo-Historie aktuell nicht verfügbar – zeigt nur Alpaca.</p>
+      )}
+
+      {!isLoading && history.length > 0 && (
+        <div className="text-xs text-text-muted font-figures flex flex-wrap gap-x-3 gap-y-1 mb-4">
+          {offen.length > 0 && <span className="text-paper">Offen: {offen.length}</span>}
+          <span>Geschlossen: {closed.length}</span>
+          <span className="text-gain">Gewinner: {gewinner}</span>
+          <span className="text-loss">Verlierer: {verlierer}</span>
+          <span className={gainLossClass(gesamtPnlNative ?? gesamtPnlEur)}>
+            P&L{singleCurrency ? "" : " (≈ EUR)"}:{" "}
+            {singleCurrency
+              ? fmtMoneySigned(gesamtPnlNative, singleCurrency)
+              : gesamtPnlEur !== null
+                ? fmtMoneySigned(gesamtPnlEur, "EUR")
+                : "–"}
+          </span>
+        </div>
+      )}
 
       {isLoading ? (
         <TableSkeleton />
@@ -90,6 +170,7 @@ function TradeHistorySection() {
               <col />
               <col className="w-20 md:w-28" />
               <col className="hidden md:table-column md:w-14" />
+              <col className="hidden md:table-column md:w-14" />
             </colgroup>
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
@@ -100,6 +181,7 @@ function TradeHistorySection() {
                 <th className="text-right py-2 font-semibold hidden md:table-cell">Menge</th>
                 <th className="text-right py-2 font-semibold">P&L</th>
                 <th className="text-left py-2 font-semibold">Status</th>
+                <th className="text-left py-2 font-semibold hidden md:table-cell">Broker</th>
                 <th className="text-right py-2 font-semibold hidden md:table-cell">Score</th>
               </tr>
             </thead>
@@ -110,22 +192,22 @@ function TradeHistorySection() {
                 // (noch nicht existierenden) Exit-Preises; "P&L"-Spalte: bei
                 // offenen Positionen der unrealisierte statt realisierte P&L.
                 const kurs = isOpen ? t.current_price : t.exit_price;
-                const pnl = isOpen ? t.unrealized_pnl : t.pnl_usd;
+                const pnl = isOpen ? t.unrealized_pnl : t.pnl;
                 const pnlPct = isOpen ? t.unrealized_pnl_pct : t.pnl_pct;
                 return (
-                  <tr key={`${t.ticker}-${t.closed_at ?? t.created_at}-${i}`} className="border-b border-border/50 last:border-0">
+                  <tr key={`${t.broker}-${t.ticker}-${t.closed_at ?? t.created_at}-${i}`} className="border-b border-border/50 last:border-0">
                     <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
                     <td className="py-2 font-medium truncate">{t.ticker}</td>
-                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtUsd(t.entry_price)}</td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMoney(t.entry_price, t.currency)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
-                      {kurs != null ? fmtUsd(kurs) : "–"}
+                      {kurs != null ? fmtMoney(kurs, t.currency) : "–"}
                     </td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
                     <td className="py-2 text-right">
                       {pnl != null ? (
                         <>
                           <div className={`md:hidden font-figures font-semibold text-sm ${gainLossClass(pnl)}`}>
-                            {fmtUsdSigned(pnl)}
+                            {fmtMoneySigned(pnl, t.currency)}
                           </div>
                           {pnlPct != null && (
                             <div className="md:hidden text-[11px] text-text-muted font-figures">
@@ -133,7 +215,7 @@ function TradeHistorySection() {
                             </div>
                           )}
                           <div className={`hidden md:block font-figures whitespace-nowrap ${gainLossClass(pnl)}`}>
-                            {fmtUsdSigned(pnl)}
+                            {fmtMoneySigned(pnl, t.currency)}
                             {pnlPct != null && ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
                           </div>
                         </>
@@ -142,6 +224,7 @@ function TradeHistorySection() {
                       )}
                     </td>
                     <td className="py-2">{statusBadge(t.exit_grund)}</td>
+                    <td className="py-2 hidden md:table-cell">{brokerBadgeSmall(t.broker)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
                   </tr>
                 );

@@ -2,11 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
-import { api, Overview } from "@/lib/api";
+import {
+  api, Overview, SaxoOverview, CombinedOpenPosition, fromAlpacaOpenTrade, fromSaxoOpenTrade,
+} from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtUsd, fmtUsdSigned, fmtMenge, gainLossClass } from "@/lib/format";
+import { fmtUsd, fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtMenge, gainLossClass } from "@/lib/format";
 
 const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
   bullish: { icon: TrendingUp, label: "Bullish" },
@@ -50,8 +52,17 @@ const SECTOR_MAP: Record<string, string> = {
 
 export default function Uebersicht() {
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["overview"],
+    queryKey: ["overview", "alpaca"],
     queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+
+  // Saxo ist bewusst NICHT Teil des Lade-/Fehler-Gates oben – fällt die
+  // Saxo-API aus, degradiert die Ansicht auf die Alpaca-Daten (mit Hinweis)
+  // statt komplett zu brechen, siehe saxoQuery.isError unten.
+  const saxoQuery = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
     refetchInterval: 60_000,
   });
 
@@ -69,29 +80,65 @@ export default function Uebersicht() {
     return <ErrorState message="Übersicht konnte nicht geladen werden." onRetry={() => refetch()} />;
   }
 
+  const saxo = saxoQuery.data;
   const vixOk = data.vix > 0 && data.vix < 20;
 
+  // Sektor-Chart bleibt bewusst Alpaca-only: SECTOR_MAP kennt keine
+  // europäischen Ticker, und Saxo-Kapital (EUR/GBP) ungewandelt zu Alpacas
+  // USD-Beträgen zu addieren würde die Prozentanteile verfälschen.
   const sectorTotals = data.open_trades.reduce<Record<string, number>>((acc, t) => {
     const sector = SECTOR_MAP[t.ticker] ?? "Sonstige";
     acc[sector] = (acc[sector] ?? 0) + t.capital_used;
     return acc;
   }, {});
   const totalCapital = Object.values(sectorTotals).reduce((a, b) => a + b, 0);
-  const unrealizedPnl = data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
+
+  const positions: CombinedOpenPosition[] = [
+    ...data.open_trades.map(fromAlpacaOpenTrade),
+    ...(saxo?.open_trades ?? []).map(fromSaxoOpenTrade),
+  ];
+
+  // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
+  // NIE als ein einziger, primärer Wert dargestellt (siehe KPI-Zeile unten:
+  // Alpaca/Saxo bleiben eigene Karten, "Gesamt" ist explizit mit "≈"
+  // markiert und zeigt den verwendeten Kurs).
+  const usdToEur = saxo?.fx_rates_to_eur?.USD ?? null;
+  const combinedValueEur = saxo && usdToEur ? data.portfolio_value * usdToEur + saxo.portfolio_value_eur : null;
+  const combinedRealizedEur = saxo && usdToEur ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur : null;
+  const combinedUnrealizedEur =
+    saxo && usdToEur
+      ? positions.reduce((sum, p) => {
+          const rate = p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1;
+          return sum + p.unrealized_pnl * rate;
+        }, 0)
+      : null;
+  const unrealizedPnlUsdOnly = data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-4">
-        <KPICard label="Portfolio-Wert" value={fmtUsd(data.portfolio_value, 2)} color="neutral" />
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 md:gap-4">
+        <KPICard label="Alpaca-Konto" value={fmtUsd(data.portfolio_value, 2)} color="neutral" subtext="USD, eigenes Budget" />
         <KPICard
-          label="Realisierter P&L"
-          value={fmtUsdSigned(data.realized_pnl, 2)}
-          color={data.realized_pnl >= 0 ? "gain" : "loss"}
+          label="Saxo-Konto"
+          value={saxo ? fmtMoney(saxo.portfolio_value_eur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
+          color="neutral"
+          subtext="EUR, eigenes Budget"
         />
         <KPICard
-          label="Unrealisierter P&L"
-          value={fmtUsdSigned(unrealizedPnl, 2)}
-          color={unrealizedPnl >= 0 ? "gain" : "loss"}
+          label="Gesamt ≈"
+          value={combinedValueEur !== null ? fmtMoney(combinedValueEur, "EUR", 0) : "…"}
+          color="gold"
+          subtext={usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten"}
+        />
+        <KPICard
+          label="Realisiert ≈"
+          value={combinedRealizedEur !== null ? fmtMoneySigned(combinedRealizedEur, "EUR", 0) : fmtUsdSigned(data.realized_pnl, 0)}
+          color={(combinedRealizedEur ?? data.realized_pnl) >= 0 ? "gain" : "loss"}
+        />
+        <KPICard
+          label="Unrealisiert ≈"
+          value={combinedUnrealizedEur !== null ? fmtMoneySigned(combinedUnrealizedEur, "EUR", 0) : fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
+          color={(combinedUnrealizedEur ?? unrealizedPnlUsdOnly) >= 0 ? "gain" : "loss"}
           subtext="nicht realisiert"
         />
         <KPICard
@@ -102,16 +149,26 @@ export default function Uebersicht() {
         />
         <KPICard
           label="Offene Positionen"
-          value={`${data.open_trades.length}/${data.max_open_positions}`}
+          value={`${positions.length}/${data.max_open_positions + (saxo?.max_open_positions ?? 0)}`}
           color="gold"
-          subtext={regimeSubtext(data.market_regime)}
+          subtext={
+            <span className="flex items-center gap-1.5 flex-wrap">
+              <span>{data.open_trades.length} Alpaca · {saxo?.open_trades.length ?? 0} Saxo</span>
+              <span>·</span>
+              {regimeSubtext(data.market_regime)}
+            </span>
+          }
         />
       </div>
+
+      {saxoQuery.isError && (
+        <p className="text-xs text-loss">Saxo-Daten aktuell nicht verfügbar – Ansicht zeigt nur Alpaca.</p>
+      )}
 
       {totalCapital > 0 && (
         <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
           <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-3">
-            Verteilung nach Sektor
+            Verteilung nach Sektor <span className="normal-case text-text-disabled">(nur Alpaca)</span>
           </div>
           <div className="space-y-2">
             {Object.entries(sectorTotals)
@@ -136,16 +193,16 @@ export default function Uebersicht() {
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted border-b border-border pb-2 mb-3">
           Offene Positionen
         </div>
-        {data.open_trades.length === 0 ? (
+        {positions.length === 0 ? (
           <p className="text-text-muted text-sm">Keine offenen Positionen.</p>
         ) : (
           <div className="space-y-2">
-            {data.open_trades.map((t) => {
+            {positions.map((t) => {
               const slLabel = t.trailing_sl_active ? "TSL" : "SL";
-              const slValue = fmtUsd(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss);
+              const slValue = fmtMoney(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss, t.currency);
               const scorePct = Math.min(100, Math.max(0, t.rule_score));
               return (
-                <div key={t.ticker}>
+                <div key={`${t.broker}-${t.ticker}`}>
                   {/* Desktop: kompakte Zeile */}
                   <div className="hidden md:block bg-bg-card border border-border rounded-card px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
@@ -157,17 +214,17 @@ export default function Uebersicht() {
                         {brokerBadge(t.broker)}
                       </div>
                       <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
-                        {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
+                        {fmtMoneySigned(t.unrealized_pnl, t.currency)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
                         {t.unrealized_pnl_pct.toFixed(1)}%)
                       </div>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-figures text-text-muted">
-                      <div>Entry: {fmtUsd(t.entry_price)}</div>
-                      <div>Aktuell: {fmtUsd(t.current_price)}</div>
+                      <div>Entry: {fmtMoney(t.entry_price, t.currency)}</div>
+                      <div>Aktuell: {fmtMoney(t.current_price, t.currency)}</div>
                       <div className={t.trailing_sl_active ? "text-gold font-semibold" : undefined}>
                         {slLabel}: {slValue}
                       </div>
-                      <div>TP: {fmtUsd(t.take_profit)}</div>
+                      <div>TP: {fmtMoney(t.take_profit, t.currency)}</div>
                     </div>
                     <div className="text-xs text-text-muted mt-1.5">
                       {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
@@ -183,7 +240,7 @@ export default function Uebersicht() {
                         {brokerBadge(t.broker)}
                       </div>
                       <span className={`text-sm font-semibold font-figures ${gainLossClass(t.unrealized_pnl)}`}>
-                        {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
+                        {fmtMoneySigned(t.unrealized_pnl, t.currency)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
                         {t.unrealized_pnl_pct.toFixed(1)}%)
                       </span>
                     </div>
@@ -191,11 +248,11 @@ export default function Uebersicht() {
                     <div className="grid grid-cols-2 gap-1.5 text-xs font-figures mb-2">
                       <div>
                         <span className="text-text-muted">Entry </span>
-                        <span>{fmtUsd(t.entry_price)}</span>
+                        <span>{fmtMoney(t.entry_price, t.currency)}</span>
                       </div>
                       <div>
                         <span className="text-text-muted">Aktuell </span>
-                        <span>{fmtUsd(t.current_price)}</span>
+                        <span>{fmtMoney(t.current_price, t.currency)}</span>
                       </div>
                       <div>
                         <span className="text-text-muted">{slLabel} </span>
@@ -203,7 +260,7 @@ export default function Uebersicht() {
                       </div>
                       <div>
                         <span className="text-text-muted">TP </span>
-                        <span className="text-gain">{fmtUsd(t.take_profit)}</span>
+                        <span className="text-gain">{fmtMoney(t.take_profit, t.currency)}</span>
                       </div>
                     </div>
 

@@ -64,6 +64,42 @@ export type Overview = {
   trading_mode: TradingMode;
 };
 
+// Saxo-Bot (trading_bot_saxo-Repo, eigener Prozess/Port 8505, ueber
+// /api/saxo/ genginx-geproxied) - eigenes EUR-Budget, komplett getrennt vom
+// Alpaca-Bot. Bewusst ein EIGENER Typ statt Wiederverwendung von OpenTrade/
+// Overview, da Felder abweichen (currency/exchange statt instrument_type,
+// kein trailing_sl/mode, capital_used_eur statt capital_used).
+export type SaxoOpenTrade = {
+  ticker: string;
+  exchange: string;
+  currency: string;
+  entry_price: number;
+  stop_loss: number;
+  take_profit: number;
+  quantity: number;
+  capital_used_eur: number;
+  rule_score: number;
+  created_at: string;
+  current_price: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  broker: "saxo";
+};
+
+export type SaxoOverview = {
+  portfolio_value_eur: number;
+  realized_pnl_eur: number;
+  daily_pnl_eur: number;
+  open_trades: SaxoOpenTrade[];
+  daily_trades: number;
+  max_trades_per_day: number;
+  max_open_positions: number;
+  // Umrechnungskurse fuer alle im Depot vorkommenden Waehrungen -> EUR
+  // (siehe broker_saxo.get_fx_rate_to_eur) - noetig um Alpacas USD-Wert und
+  // ggf. GBP-Saxo-Trades zu einer EUR-Naeherung zu kombinieren.
+  fx_rates_to_eur: Record<string, number>;
+};
+
 export type DailySnapshot = {
   log_date: string;
   portfolio_value: number;
@@ -168,6 +204,121 @@ export type TradeHistoryEntry = {
   unrealized_pnl_pct: number | null;
 };
 
+// Rohform von trading_api_saxo.py GET /api/trades/history – bewusst separater
+// Typ statt TradeHistoryEntry (andere Feldnamen: currency/exchange statt
+// direction/mode, pnl_eur statt pnl_usd, capital_used_eur statt capital_used).
+export type SaxoTradeEntry = {
+  ticker: string;
+  exchange: string;
+  currency: string;
+  direction: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  stop_loss: number;
+  take_profit: number;
+  capital_used_eur: number;
+  pnl_eur: number | null;
+  pnl_pct: number | null;
+  rule_score: number;
+  status: string;
+  created_at: string;
+  closed_at: string | null;
+  exit_grund: string;
+  broker: "saxo";
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+};
+
+// Gemeinsame Anzeige-Form für Performance.tsx, die Alpaca- (USD) und
+// Saxo-Trades (EUR/GBP) nebeneinander in einer Tabelle darstellt – jede
+// Zeile behält ihre eigene "currency" statt alles fälschlich als USD/EUR
+// auszugeben. "pnl"/"pnl_pct" sind der REALISIERTE G/V (NULL bei OPEN,
+// unverändert – siehe database.get_total_pnl/get_daily_pnl bzw.
+// get_total_pnl_eur/get_daily_pnl_eur, hier nirgends angefasst).
+export type CombinedTradeEntry = {
+  ticker: string;
+  broker: "alpaca" | "saxo";
+  currency: string;
+  quantity: number;
+  entry_price: number;
+  exit_price: number | null;
+  current_price: number | null;
+  pnl: number | null;
+  pnl_pct: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+  rule_score: number;
+  status: string;
+  exit_grund: string;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
+  return {
+    ticker: t.ticker, broker: "alpaca", currency: "USD", quantity: t.quantity,
+    entry_price: t.entry_price, exit_price: t.exit_price, current_price: t.current_price,
+    pnl: t.pnl_usd, pnl_pct: t.pnl_pct,
+    unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
+    rule_score: t.rule_score, status: t.status, exit_grund: t.exit_grund,
+    created_at: t.created_at, closed_at: t.closed_at,
+  };
+}
+
+export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
+  return {
+    ticker: t.ticker, broker: "saxo", currency: t.currency, quantity: t.quantity,
+    entry_price: t.entry_price, exit_price: t.exit_price, current_price: t.current_price,
+    pnl: t.pnl_eur, pnl_pct: t.pnl_pct,
+    unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
+    rule_score: t.rule_score, status: t.status, exit_grund: t.exit_grund,
+    created_at: t.created_at, closed_at: t.closed_at,
+  };
+}
+
+// Gemeinsame Anzeige-Form für Uebersicht.tsx (offene Positionen beider
+// Broker in einer Liste/Kartenansicht) – Saxo-Felder ohne Alpaca-spezifische
+// Konzepte (trailing_sl/mode) werden mit sinnvollen Defaults aufgefüllt statt
+// die Karten-Darstellung mit optionalen Feldern zu verzweigen.
+export type CombinedOpenPosition = {
+  ticker: string;
+  broker: "alpaca" | "saxo";
+  currency: string;
+  entry_price: number;
+  current_price: number;
+  stop_loss: number;
+  take_profit: number;
+  quantity: number;
+  rule_score: number;
+  unrealized_pnl: number;
+  unrealized_pnl_pct: number;
+  trailing_sl_active: boolean;
+  trailing_sl_price: number | null;
+  mode: TradingMode;
+};
+
+export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
+  return {
+    ticker: t.ticker, broker: "alpaca", currency: "USD",
+    entry_price: t.entry_price, current_price: t.current_price,
+    stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
+    rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
+    trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: t.mode,
+  };
+}
+
+export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
+  return {
+    ticker: t.ticker, broker: "saxo", currency: t.currency,
+    entry_price: t.entry_price, current_price: t.current_price,
+    stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
+    rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
+    trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
+  };
+}
+
 export type LearningProposal = {
   index: number;
   typ: string;
@@ -184,7 +335,9 @@ export type LearningProposal = {
 
 // Guardrail-Keys → deutsche Labels + Formatierungsregel, identisch zum
 // Pendant in portfolio_react/src/lib/api.ts (gleiche bot_config-Keys).
-export const GUARDRAIL_LABELS: Record<string, { label: string; format: "pct" | "usd" | "int" }> = {
+// SAXO_*-Keys (eigener Kapitaltopf, EUR statt USD) hier zusätzlich gepflegt,
+// da beide Broker dieselben GuardrailCard/PresetsSection-Komponenten nutzen.
+export const GUARDRAIL_LABELS: Record<string, { label: string; format: "pct" | "usd" | "eur" | "int" }> = {
   DAILY_LOSS_LIMIT_PCT: { label: "Tagesverlust-Limit", format: "pct" },
   MAX_CAPITAL_TOTAL: { label: "Gesamtkapital", format: "usd" },
   MAX_CAPITAL_PER_TRADE: { label: "Max. pro Trade", format: "usd" },
@@ -199,6 +352,15 @@ export const GUARDRAIL_LABELS: Record<string, { label: string; format: "pct" | "
   MAX_HOLDING_DAYS: { label: "Max. Haltedauer (Tage)", format: "int" },
   VOLATILE_SEGMENT_PCT: { label: "Volatiles Segment (Ziel)", format: "pct" },
   EARNINGS_BUFFER_DAYS: { label: "Earnings-Puffer (Tage)", format: "int" },
+  // Saxo (eigener Kapitaltopf, EUR)
+  SAXO_DAILY_LOSS_LIMIT_PCT: { label: "Tagesverlust-Limit", format: "pct" },
+  SAXO_MAX_CAPITAL_TOTAL: { label: "Gesamtkapital", format: "eur" },
+  SAXO_MAX_CAPITAL_PER_TRADE: { label: "Max. pro Trade", format: "eur" },
+  SAXO_MAX_TRADES_PER_DAY: { label: "Max. Trades/Tag", format: "int" },
+  SAXO_MAX_OPEN_POSITIONS: { label: "Max. offene Positionen", format: "int" },
+  SAXO_STOP_LOSS_PCT: { label: "Stop Loss", format: "pct" },
+  SAXO_TAKE_PROFIT_PCT: { label: "Take Profit", format: "pct" },
+  SAXO_MIN_SIGNAL_SCORE: { label: "Min. Signal Score", format: "int" },
 };
 
 export function fmtGuardrailValue(key: string, raw: string): string {
@@ -207,12 +369,13 @@ export function fmtGuardrailValue(key: string, raw: string): string {
   if (!spec || Number.isNaN(n)) return raw;
   if (spec.format === "pct") return `${(n * 100).toLocaleString("de-DE", { maximumFractionDigits: 1 })}%`;
   if (spec.format === "usd") return `${n.toLocaleString("de-DE", { maximumFractionDigits: 0 })} $`;
+  if (spec.format === "eur") return `${n.toLocaleString("de-DE", { maximumFractionDigits: 0 })} €`;
   return n.toLocaleString("de-DE");
 }
 
 export function parseGuardrailInput(key: string, display: string): string {
   const spec = GUARDRAIL_LABELS[key];
-  const n = Number(display.replace(",", ".").replace("%", "").replace("$", "").trim());
+  const n = Number(display.replace(",", ".").replace("%", "").replace("$", "").replace("€", "").trim());
   if (!spec || Number.isNaN(n)) return display;
   if (spec.format === "pct") return String(n / 100);
   return String(n);

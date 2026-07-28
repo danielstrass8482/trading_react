@@ -10,6 +10,43 @@ import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
 import { fmtPct, fmtUsd, gainLossClass } from "@/lib/format";
 
+type BrokerKey = "alpaca" | "saxo";
+
+// Getrennte Guardrail-Key-Sets pro Broker – Saxo hat einen eigenen, mit
+// SAXO_-Präfix versehenen Config-Satz (saxo_bot_config, komplett getrennt
+// von Alpacas bot_config, siehe trading_api_saxo.py). Presets/Entry-Slots/
+// Lernvorschläge existieren für Saxo (noch) nicht (fixe Zeitfenster pro
+// Börse statt konfigurierbarer Zeitslots, kein Backlook-Lernzyklus).
+const ALPACA_GUARDRAIL_KEYS = [
+  "MAX_CAPITAL_TOTAL", "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
+  "DAILY_LOSS_LIMIT_PCT", "MIN_SIGNAL_SCORE", "VIX_PAUSE_THRESHOLD",
+  "ATR_MULTIPLIER_SL", "ATR_MULTIPLIER_TP", "MAX_HOLDING_DAYS", "VOLATILE_SEGMENT_PCT", "EARNINGS_BUFFER_DAYS",
+];
+
+const SAXO_GUARDRAIL_KEYS = [
+  "SAXO_MAX_CAPITAL_TOTAL", "SAXO_MAX_CAPITAL_PER_TRADE", "SAXO_MAX_OPEN_POSITIONS",
+  "SAXO_MAX_TRADES_PER_DAY", "SAXO_DAILY_LOSS_LIMIT_PCT", "SAXO_MIN_SIGNAL_SCORE",
+  "SAXO_STOP_LOSS_PCT", "SAXO_TAKE_PROFIT_PCT",
+];
+
+function BrokerSwitcher({ broker, onChange }: { broker: BrokerKey; onChange: (b: BrokerKey) => void }) {
+  return (
+    <div className="flex gap-1 bg-bg-hover rounded-btn p-1 w-fit">
+      {(["alpaca", "saxo"] as const).map((b) => (
+        <button
+          key={b}
+          onClick={() => onChange(b)}
+          className={`text-xs px-3 py-1.5 rounded-btn transition-colors ${
+            broker === b ? "bg-gold text-bg-app font-medium" : "text-text-muted hover:text-text-primary"
+          }`}
+        >
+          {b === "alpaca" ? "Alpaca (US)" : "Saxo (Europa)"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 type PresetKey = "konservativ" | "ausgewogen" | "aggressiv";
 
 const PRESETS: {
@@ -68,12 +105,6 @@ function InfoTooltip({ text }: { text: string }) {
   );
 }
 
-const GUARDRAIL_KEYS = [
-  "MAX_CAPITAL_TOTAL", "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
-  "DAILY_LOSS_LIMIT_PCT", "MIN_SIGNAL_SCORE", "VIX_PAUSE_THRESHOLD",
-  "ATR_MULTIPLIER_SL", "ATR_MULTIPLIER_TP", "MAX_HOLDING_DAYS", "VOLATILE_SEGMENT_PCT", "EARNINGS_BUFFER_DAYS",
-];
-
 function activePreset(config: Record<string, string>): PresetKey | null {
   for (const preset of PRESETS) {
     const matches = Object.entries(preset.values).every(([k, v]) => config[k] === v);
@@ -83,15 +114,24 @@ function activePreset(config: Record<string, string>): PresetKey | null {
 }
 
 // MAX_OPEN_POSITIONS × MAX_CAPITAL_PER_TRADE darf MAX_CAPITAL_TOTAL nicht
-// übersteigen – Live-Validierung während der Eingabe.
+// übersteigen – Live-Validierung während der Eingabe. Funktioniert für
+// beide Broker: Key-Namen (mit/ohne SAXO_-Präfix) und Währungssymbol werden
+// aus editingKey abgeleitet statt hartkodiert zu sein.
 function validateCapitalSettings(
   config: Record<string, string>, editingKey: string, draftRawValue: string
 ): { valid: boolean; message?: string } {
-  if (editingKey !== "MAX_OPEN_POSITIONS" && editingKey !== "MAX_CAPITAL_PER_TRADE") return { valid: true };
+  const isSaxo = editingKey.startsWith("SAXO_");
+  const prefix = isSaxo ? "SAXO_" : "";
+  const openKey = `${prefix}MAX_OPEN_POSITIONS`;
+  const perTradeKey = `${prefix}MAX_CAPITAL_PER_TRADE`;
+  const totalKey = `${prefix}MAX_CAPITAL_TOTAL`;
+  const currencySymbol = isSaxo ? "€" : "$";
 
-  const maxOpenPositions = Number(editingKey === "MAX_OPEN_POSITIONS" ? draftRawValue : config.MAX_OPEN_POSITIONS);
-  const maxCapitalPerTrade = Number(editingKey === "MAX_CAPITAL_PER_TRADE" ? draftRawValue : config.MAX_CAPITAL_PER_TRADE);
-  const gesamtkapital = Number(config.MAX_CAPITAL_TOTAL);
+  if (editingKey !== openKey && editingKey !== perTradeKey) return { valid: true };
+
+  const maxOpenPositions = Number(editingKey === openKey ? draftRawValue : config[openKey]);
+  const maxCapitalPerTrade = Number(editingKey === perTradeKey ? draftRawValue : config[perTradeKey]);
+  const gesamtkapital = Number(config[totalKey]);
 
   if (!maxOpenPositions || !maxCapitalPerTrade || !gesamtkapital || Number.isNaN(maxOpenPositions) || Number.isNaN(maxCapitalPerTrade)) {
     return { valid: true };
@@ -101,7 +141,7 @@ function validateCapitalSettings(
     const maxMoeglich = Math.floor(gesamtkapital / maxCapitalPerTrade);
     return {
       valid: false,
-      message: `Mit diesen Einstellungen würdest du ${maxInvestiert.toLocaleString("de-DE")} $ investieren, aber nur ${gesamtkapital.toLocaleString("de-DE")} $ verfügbar. Maximal ${maxMoeglich} Positionen möglich.`,
+      message: `Mit diesen Einstellungen würdest du ${maxInvestiert.toLocaleString("de-DE")} ${currencySymbol} investieren, aber nur ${gesamtkapital.toLocaleString("de-DE")} ${currencySymbol} verfügbar. Maximal ${maxMoeglich} Positionen möglich.`,
     };
   }
   return { valid: true };
@@ -113,7 +153,7 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
 
   const mutation = useMutation({
     mutationFn: (preset: PresetKey) => api.post("/api/bot-config/preset", { preset }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config", "alpaca"] }),
   });
 
   return (
@@ -148,7 +188,11 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
   );
 }
 
-function GuardrailCard({ botKey, value, config }: { botKey: string; value: string; config: Record<string, string> }) {
+function GuardrailCard({
+  botKey, value, config, apiPrefix = "/api", queryKeyPrefix = "alpaca",
+}: {
+  botKey: string; value: string; config: Record<string, string>; apiPrefix?: string; queryKeyPrefix?: string;
+}) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -158,10 +202,10 @@ function GuardrailCard({ botKey, value, config }: { botKey: string; value: strin
   const displayValue = fmtGuardrailValue(botKey, value);
 
   const mutation = useMutation({
-    mutationFn: (rawValue: string) => api.put(`/api/bot-config/${botKey}`, { value: rawValue }),
+    mutationFn: (rawValue: string) => api.put(`${apiPrefix}/bot-config/${botKey}`, { value: rawValue }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["bot-config"] });
-      queryClient.invalidateQueries({ queryKey: ["overview"] });
+      queryClient.invalidateQueries({ queryKey: ["bot-config", queryKeyPrefix] });
+      queryClient.invalidateQueries({ queryKey: ["overview", queryKeyPrefix] });
       setEditing(false);
     },
   });
@@ -498,44 +542,66 @@ function LearningProposalsSection() {
 }
 
 export default function Einstellungen() {
+  const [broker, setBroker] = useState<BrokerKey>("alpaca");
+  const apiPrefix = broker === "saxo" ? "/api/saxo" : "/api";
+  const guardrailKeys = broker === "saxo" ? SAXO_GUARDRAIL_KEYS : ALPACA_GUARDRAIL_KEYS;
+
   const { data: configList, isLoading, isError, refetch } = useQuery({
-    queryKey: ["bot-config"],
-    queryFn: () => api.get<BotConfigEntry[]>("/api/bot-config").then((r) => r.data),
+    queryKey: ["bot-config", broker],
+    queryFn: () => api.get<BotConfigEntry[]>(`${apiPrefix}/bot-config`).then((r) => r.data),
   });
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <CardSkeleton className="h-40" />
-        <TableSkeleton />
-      </div>
-    );
-  }
-
-  if (isError || !configList) {
-    return <ErrorState message="Einstellungen konnten nicht geladen werden." onRetry={() => refetch()} />;
-  }
-
-  const config = Object.fromEntries(configList.map((c) => [c.key, c.value]));
 
   return (
     <div className="space-y-8">
-      <PresetsSection config={config} />
-
-      <div className="space-y-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Guardrails</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {GUARDRAIL_KEYS.filter((k) => k in config).map((key) => (
-            <GuardrailCard key={key} botKey={key} value={config[key]} config={config} />
-          ))}
-        </div>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-lg font-semibold">Einstellungen</h2>
+        <BrokerSwitcher broker={broker} onChange={setBroker} />
       </div>
 
-      <BrokerConfigSection config={config} />
+      {isLoading ? (
+        <div className="space-y-6">
+          <CardSkeleton className="h-40" />
+          <TableSkeleton />
+        </div>
+      ) : isError || !configList ? (
+        <ErrorState message="Einstellungen konnten nicht geladen werden." onRetry={() => refetch()} />
+      ) : (
+        (() => {
+          const config = Object.fromEntries(configList.map((c) => [c.key, c.value]));
+          return (
+            <>
+              {broker === "alpaca" && <PresetsSection config={config} />}
 
-      <EntrySlotsSection />
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
+                  Guardrails {broker === "saxo" && <span className="text-text-disabled normal-case">— eigenes EUR-Budget, komplett getrennt von Alpaca</span>}
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {guardrailKeys.filter((k) => k in config).map((key) => (
+                    <GuardrailCard key={key} botKey={key} value={config[key]} config={config} apiPrefix={apiPrefix} queryKeyPrefix={broker} />
+                  ))}
+                </div>
+              </div>
 
-      <LearningProposalsSection />
+              {broker === "alpaca" && (
+                <>
+                  <BrokerConfigSection config={config} />
+                  <EntrySlotsSection />
+                  <LearningProposalsSection />
+                </>
+              )}
+
+              {broker === "saxo" && (
+                <div className="bg-bg-card border border-border rounded-card px-4 py-3 text-xs text-text-muted">
+                  Saxo handelt zu festen Zeitfenstern pro Börse (Xetra/Euronext 30 Min nach Handelsbeginn 09:00
+                  CET, LSE 30 Min nach 08:00 UK-Zeit) statt über konfigurierbare Einstiegszeitpunkte wie beim
+                  Alpaca-Bot. Kein Preset-/Lernzyklus-System in dieser ersten Version.
+                </div>
+              )}
+            </>
+          );
+        })()
+      )}
     </div>
   );
 }
