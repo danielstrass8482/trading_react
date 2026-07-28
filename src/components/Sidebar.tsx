@@ -172,8 +172,11 @@ export default function Sidebar({
       </div>
     </aside>
 
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-bg-sidebar border-t border-border pb-[env(safe-area-inset-bottom)] md:hidden">
-      <div className="flex justify-around items-center h-16">
+    <div className="fixed bottom-0 left-0 right-0 z-[9999] md:hidden">
+      <nav
+        style={{ height: "64px" }}
+        className="bg-bg-sidebar border-t border-border flex justify-around items-center"
+      >
         {BOTTOM_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
           const isActive = key === "mehr" ? active === "dokumentation" : key === active;
           return (
@@ -188,12 +191,15 @@ export default function Sidebar({
             </button>
           );
         })}
-      </div>
-    </nav>
+      </nav>
+      {/* Eigener Streifen statt Padding im Nav-Element, damit die Nav-Höhe
+          immer exakt 64px bleibt (FIX 2: nie schrumpfen/wachsen beim Scrollen). */}
+      <div style={{ height: "env(safe-area-inset-bottom)" }} className="bg-bg-sidebar" />
+    </div>
 
     {sheetOpen && (
       <div
-        className="fixed inset-0 z-50 md:hidden"
+        className="fixed inset-0 z-[10000] md:hidden"
         style={{ background: "rgba(0,0,0,0.5)" }}
         onClick={() => setSheetOpen(false)}
       >

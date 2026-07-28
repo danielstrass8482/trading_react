@@ -5,6 +5,7 @@ export type Column<T> = {
   label: string;
   align?: "left" | "right" | "center";
   render?: (row: T) => React.ReactNode;
+  hideOnMobile?: boolean;
 };
 
 export default function DataTable<T extends { [key: string]: unknown }>({
@@ -33,13 +34,13 @@ export default function DataTable<T extends { [key: string]: unknown }>({
 
   return (
     <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-      <table className="w-full min-w-[600px] border-collapse text-sm">
+      <table className="w-full min-w-[480px] border-collapse text-xs md:text-sm">
         <thead>
           <tr className="border-b-2 border-border-accent">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-text-muted ${alignClass(col.align)}`}
+                className={`px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-text-muted ${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""}`}
               >
                 {col.label}
               </th>
@@ -56,7 +57,7 @@ export default function DataTable<T extends { [key: string]: unknown }>({
                   className={`border-b border-border transition-colors ${onRowClick ? "cursor-pointer hover:bg-bg-hover" : "hover:bg-bg-hover"} ${expanded ? "bg-bg-hover" : ""}`}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className={`px-3 py-2.5 ${alignClass(col.align)}`}>
+                    <td key={col.key} className={`px-3 py-2.5 ${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""}`}>
                       {col.render ? col.render(row) : String(row[col.key] ?? "–")}
                     </td>
                   ))}

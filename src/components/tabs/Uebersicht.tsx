@@ -109,7 +109,7 @@ export default function Uebersicht() {
       </div>
 
       {totalCapital > 0 && (
-        <div className="bg-bg-card border border-border rounded-card px-6 py-5">
+        <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
           <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-3">
             Verteilung nach Sektor
           </div>
@@ -119,12 +119,12 @@ export default function Uebersicht() {
               .map(([sector, wert]) => {
                 const pct = (wert / totalCapital) * 100;
                 return (
-                  <div key={sector} className="flex items-center gap-3 text-sm">
-                    <span className="w-32 text-text-muted">{sector}</span>
-                    <div className="flex-1 h-1.5 bg-bg-hover rounded-btn overflow-hidden">
+                  <div key={sector} className="flex items-center gap-2 md:gap-3 text-sm">
+                    <span className="w-16 md:w-32 shrink-0 text-text-muted truncate">{sector}</span>
+                    <div className="flex-1 min-w-0 h-1.5 bg-bg-hover rounded-btn overflow-hidden">
                       <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
                     </div>
-                    <span className="font-figures w-24 text-right">{fmtUsd(wert, 0)}</span>
+                    <span className="font-figures w-16 md:w-24 shrink-0 text-right">{fmtUsd(wert, 0)}</span>
                   </div>
                 );
               })}
@@ -143,6 +143,7 @@ export default function Uebersicht() {
             {data.open_trades.map((t) => {
               const slLabel = t.trailing_sl_active ? "TSL" : "SL";
               const slValue = fmtUsd(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss);
+              const scorePct = Math.min(100, Math.max(0, t.rule_score));
               return (
                 <div key={t.ticker}>
                   {/* Desktop: kompakte Zeile */}
@@ -207,11 +208,11 @@ export default function Uebersicht() {
                     </div>
 
                     <div className="flex items-center gap-2 pt-2 border-t border-border">
-                      <span className="text-[10px] text-text-muted">Score</span>
-                      <div className="flex-1 h-[3px] bg-border rounded-full">
-                        <div className="h-[3px] bg-gold rounded-full" style={{ width: `${t.rule_score}%` }} />
+                      <span className="text-[10px] text-text-muted shrink-0">Score</span>
+                      <div className="flex-1 min-w-0 h-[3px] bg-border rounded-full overflow-hidden">
+                        <div className="h-[3px] bg-gold rounded-full" style={{ width: `${scorePct}%` }} />
                       </div>
-                      <span className="text-xs text-gold font-semibold font-figures">{t.rule_score}</span>
+                      <span className="text-xs text-gold font-semibold font-figures shrink-0">{t.rule_score}</span>
                     </div>
                   </div>
                 </div>

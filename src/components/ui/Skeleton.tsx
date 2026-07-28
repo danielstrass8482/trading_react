@@ -4,9 +4,9 @@ export function Skeleton({ className = "" }: { className?: string }) {
 
 export function KPISkeletonRow({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-4">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="bg-bg-card border border-border rounded-card px-6 py-5 space-y-3">
+        <div key={i} className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5 space-y-3">
           <Skeleton className="h-3 w-20" />
           <Skeleton className="h-7 w-28" />
         </div>
@@ -27,7 +27,7 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
 
 export function CardSkeleton({ className = "h-24" }: { className?: string }) {
   return (
-    <div className="bg-bg-card border border-border rounded-card px-6 py-5">
+    <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
       <Skeleton className={className} />
     </div>
   );

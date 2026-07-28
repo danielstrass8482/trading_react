@@ -6,7 +6,7 @@ export default function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="bg-bg-card border border-loss/40 rounded-card px-6 py-5 text-sm space-y-2">
+    <div className="bg-bg-card border border-loss/40 rounded-card px-4 md:px-6 py-4 md:py-5 text-sm space-y-2">
       <p className="text-loss">{message}</p>
       {onRetry && (
         <button

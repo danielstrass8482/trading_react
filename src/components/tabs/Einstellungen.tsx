@@ -59,7 +59,7 @@ function InfoTooltip({ text }: { text: string }) {
         <Info size={10} />
       </div>
       <div
-        className="absolute bottom-6 right-0 z-50 hidden group-hover:block bg-bg-card border border-border
+        className="absolute bottom-full top-auto mb-2 right-0 z-50 hidden group-hover:block bg-bg-card border border-border
                    rounded p-2 text-xs text-text-muted max-w-48 w-48 shadow-lg"
       >
         {text}
@@ -361,7 +361,7 @@ function EntrySlotsSection() {
         </label>
       </div>
       <div className="bg-bg-card border border-border rounded-card px-4 py-4 overflow-x-auto">
-        <table className="w-full min-w-[500px] text-sm">
+        <table className="w-full min-w-[500px] text-xs md:text-sm">
           <thead>
             <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
               <th className="text-left py-2 font-semibold">Zeit ET</th>

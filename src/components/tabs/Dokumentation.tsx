@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { ChevronDown, AlertTriangle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 
 const SCORE_WEIGHTS: { name: string; punkte: number; beschreibung: string }[] = [
   { name: "RSI (14)", punkte: 20, beschreibung: "Momentum – überverkaufte Titel (RSI < 35) gelten als bullisch." },
@@ -24,29 +24,34 @@ const FAQ: { frage: string; antwort: string }[] = [
 ];
 
 function AccordionSection({
-  title, defaultOpen = false, children,
+  id, title, active, onToggle, children,
 }: {
-  title: string; defaultOpen?: boolean; children: React.ReactNode;
+  id: string; title: string; active: boolean; onToggle: (id: string) => void; children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="bg-bg-card border border-border rounded-card overflow-hidden">
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-5 py-4 text-left hover:bg-bg-hover transition-colors"
+        onClick={() => onToggle(id)}
+        className="w-full flex items-center justify-between gap-2 px-5 py-4 text-left hover:bg-bg-hover transition-colors"
       >
-        {open ? <ChevronDown size={16} className="text-gold shrink-0" /> : <ChevronRight size={16} className="text-gold shrink-0" />}
         <span className="font-medium">{title}</span>
+        <ChevronDown
+          size={16}
+          className={`text-gold shrink-0 transition-transform duration-200 ${active ? "rotate-180" : ""}`}
+        />
       </button>
-      {open && <div className="px-5 pb-5 space-y-3 text-sm text-text-primary leading-relaxed">{children}</div>}
+      {active && <div className="px-5 pb-5 space-y-3 text-sm text-text-primary leading-relaxed">{children}</div>}
     </div>
   );
 }
 
 export default function Dokumentation() {
+  const [activeSection, setActiveSection] = useState<string | null>("funktion");
+  const toggle = (id: string) => setActiveSection((prev) => (prev === id ? null : id));
+
   return (
     <div className="space-y-3">
-      <AccordionSection title="Wie funktioniert der Bot?" defaultOpen>
+      <AccordionSection id="funktion" title="Wie funktioniert der Bot?" active={activeSection === "funktion"} onToggle={toggle}>
         <p>Der Bot arbeitet mit einer zweistufigen Analyse:</p>
         <ul className="space-y-1.5">
           <li>
@@ -73,7 +78,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Signal-Score im Detail">
+      <AccordionSection id="score" title="Signal-Score im Detail" active={activeSection === "score"} onToggle={toggle}>
         <p>Der technische Basis-Score setzt sich aus sechs gewichteten Kriterien zusammen und ergibt in Summe maximal 100 Punkte:</p>
         <div className="divide-y divide-border/50 border border-border rounded-card overflow-hidden">
           {SCORE_WEIGHTS.map((w) => (
@@ -92,7 +97,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Einstiegszeitpunkte">
+      <AccordionSection id="einstiege" title="Einstiegszeitpunkte" active={activeSection === "einstiege"} onToggle={toggle}>
         <p>5 feste Zeitpunkte pro Handelstag (Eastern Time):</p>
         <ul className="space-y-1.5">
           <li><strong className="font-figures">09:45 ET</strong> – max. 1 Trade, um die erste Opening-Volatilität zu vermeiden.</li>
@@ -110,7 +115,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Fair Value Filter">
+      <AccordionSection id="fairvalue" title="Fair Value Filter" active={activeSection === "fairvalue"} onToggle={toggle}>
         <p>
           Bevor eine technische Analyse überhaupt stattfindet, prüft der Bot in einer{" "}
           <strong>zweistufigen Logik</strong>, ob ein Titel fundamental unterbewertet ist:
@@ -137,7 +142,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Stop Loss & Take Profit">
+      <AccordionSection id="sltp" title="Stop Loss & Take Profit" active={activeSection === "sltp"} onToggle={toggle}>
         <p>
           Nicht starr, sondern dynamisch: Statt fester Prozentwerte berechnet der Bot Stop Loss
           und Take Profit anhand der <strong>Average True Range (ATR)</strong> – der
@@ -154,7 +159,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Trailing Stop">
+      <AccordionSection id="trailing" title="Trailing Stop" active={activeSection === "trailing"} onToggle={toggle}>
         <p>
           Nach dem ersten erreichten Take Profit verkauft der Bot nicht sofort fest, sondern
           aktiviert einen Trailing Stop Loss: Er wird auf „Höchstkurs seit Kauf minus ATR ×
@@ -165,7 +170,7 @@ export default function Dokumentation() {
         <p>Fällt der Kurs unter diesen nachgezogenen Stop, wird die Position verkauft.</p>
       </AccordionSection>
 
-      <AccordionSection title="Time-Based Exit">
+      <AccordionSection id="timeexit" title="Time-Based Exit" active={activeSection === "timeexit"} onToggle={toggle}>
         <p>
           Unabhängig von SL/TP/Trailing wird jede Position spätestens nach 5 Handelstagen
           automatisch geschlossen (konfigurierbar, 3–7 Tage). Das verhindert totes Kapital in
@@ -173,7 +178,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Markt-Regime Filter">
+      <AccordionSection id="regime" title="Markt-Regime Filter" active={activeSection === "regime"} onToggle={toggle}>
         <p>
           Täglich vergleicht der Bot den S&amp;P 500 mit seinem SMA50/SMA200 und bestimmt daraus
           ein aktuelles Marktregime:
@@ -199,7 +204,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Korrelationsfilter">
+      <AccordionSection id="korrelation" title="Korrelationsfilter" active={activeSection === "korrelation"} onToggle={toggle}>
         <p>
           Der Bot lässt keine zwei Positionen mit mehr als 0,8 Korrelation gleichzeitig offen. Ist
           die 3-Monats-Kursbewegung eines Kandidaten zu stark mit einer bereits offenen Position
@@ -209,7 +214,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Portfolio-Segmentierung">
+      <AccordionSection id="segmentierung" title="Portfolio-Segmentierung" active={activeSection === "segmentierung"} onToggle={toggle}>
         <p>
           Das Portfolio wird bewusst gemischt gehalten: 67% stabile Large Caps (S&amp;P-500-Titel)
           und 33% volatile Wachstumstitel (günstige Spekulationswerte, gehebelte ETFs,
@@ -231,7 +236,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Earnings-Filter">
+      <AccordionSection id="earnings" title="Earnings-Filter" active={activeSection === "earnings"} onToggle={toggle}>
         <p>
           Vor jedem Kauf prüft der Bot über den Earnings-Kalender, ob in den nächsten drei
           Handelstagen eine Quartalszahl ansteht. Ist das der Fall, wird der Kandidat mit
@@ -241,7 +246,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Morning Brief">
+      <AccordionSection id="briefing" title="Morning Brief" active={activeSection === "briefing"} onToggle={toggle}>
         <p>
           Täglich um 08:30 ET – vor dem ersten Einstiegszeitpunkt (09:45 ET) – erstellt eine
           KI-Komponente ein kurzes Marktbriefing (Deutsch) auf Basis von VIX, S&amp;P 500,
@@ -251,7 +256,7 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Wöchentlicher Lernzyklus (montags)">
+      <AccordionSection id="lernzyklus" title="Wöchentlicher Lernzyklus (montags)" active={activeSection === "lernzyklus"} onToggle={toggle}>
         <p>
           Jeden Montag, vor dem ersten regulären Bot-Zyklus, wertet der Bot die
           abgeschlossenen Trades der letzten Wochen statistisch aus – ohne LLM, rein
@@ -271,14 +276,14 @@ export default function Dokumentation() {
         </p>
       </AccordionSection>
 
-      <AccordionSection title="Unterstützte Broker">
+      <AccordionSection id="broker" title="Unterstützte Broker" active={activeSection === "broker"} onToggle={toggle}>
         <ul className="space-y-1.5">
           <li><strong>Alpaca Markets</strong> – US-Aktien, Fractional Shares. Aktiv, Standard-Broker.</li>
           <li><strong>Saxo Bank</strong> – weltweit (US, EU, Asien). Demnächst verfügbar.</li>
         </ul>
       </AccordionSection>
 
-      <AccordionSection title="Risiken">
+      <AccordionSection id="risiken" title="Risiken" active={activeSection === "risiken"} onToggle={toggle}>
         <div className="bg-loss/10 border border-loss/30 rounded-card px-4 py-4 flex gap-3">
           <AlertTriangle className="text-loss shrink-0 mt-0.5" size={20} />
           <div className="space-y-1.5">
@@ -295,7 +300,7 @@ export default function Dokumentation() {
         </div>
       </AccordionSection>
 
-      <AccordionSection title="FAQ">
+      <AccordionSection id="faq" title="FAQ" active={activeSection === "faq"} onToggle={toggle}>
         <div className="space-y-4">
           {FAQ.map((f) => (
             <div key={f.frage}>

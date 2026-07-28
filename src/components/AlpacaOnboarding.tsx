@@ -114,7 +114,7 @@ export default function AlpacaOnboarding() {
   if (isLoading || dismissed || !data || data.connected) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+    <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 px-4">
       <div className="w-full max-w-md bg-bg-card border border-gold/40 rounded-card px-8 py-8">
         <div className="text-lg font-semibold text-gold mb-1 text-center">
           Verbinde deinen Alpaca Account

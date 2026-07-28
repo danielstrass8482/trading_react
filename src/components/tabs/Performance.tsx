@@ -49,7 +49,7 @@ function TradeHistorySection() {
   const gesamtPnl = closed.reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
 
   return (
-    <div className="bg-bg-card border border-border rounded-card px-6 py-5">
+    <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
           Handelshistorie
@@ -68,17 +68,17 @@ function TradeHistorySection() {
         <p className="text-text-muted text-sm py-4 text-center">Noch keine abgeschlossenen Trades.</p>
       ) : (
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <table className="w-full min-w-[600px] text-sm">
+          <table className="w-full min-w-[500px] text-xs md:text-sm">
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
                 <th className="text-left py-2 font-semibold">Datum</th>
                 <th className="text-left py-2 font-semibold">Ticker</th>
-                <th className="text-right py-2 font-semibold">Entry</th>
-                <th className="text-right py-2 font-semibold">Exit</th>
-                <th className="text-right py-2 font-semibold">Menge</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Entry</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Exit</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Menge</th>
                 <th className="text-right py-2 font-semibold">P&L</th>
                 <th className="text-left py-2 font-semibold">Grund</th>
-                <th className="text-right py-2 font-semibold">Score</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Score</th>
               </tr>
             </thead>
             <tbody>
@@ -86,11 +86,11 @@ function TradeHistorySection() {
                 <tr key={`${t.ticker}-${t.closed_at}-${i}`} className="border-b border-border/50 last:border-0">
                   <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
                   <td className="py-2 font-medium">{t.ticker}</td>
-                  <td className="py-2 text-right font-figures text-text-muted">{fmtUsd(t.entry_price)}</td>
-                  <td className="py-2 text-right font-figures text-text-muted">
+                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtUsd(t.entry_price)}</td>
+                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
                     {t.exit_price != null ? fmtUsd(t.exit_price) : "–"}
                   </td>
-                  <td className="py-2 text-right font-figures text-text-muted">{fmtMenge(t.quantity)}</td>
+                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
                   <td className={`py-2 text-right font-figures ${gainLossClass(t.pnl_usd ?? 0)}`}>
                     {t.pnl_usd != null ? (
                       <>
@@ -102,7 +102,7 @@ function TradeHistorySection() {
                     )}
                   </td>
                   <td className="py-2">{exitGrundBadge(t.exit_grund)}</td>
-                  <td className="py-2 text-right font-figures text-text-muted">{t.rule_score}</td>
+                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
                 </tr>
               ))}
             </tbody>
@@ -124,12 +124,12 @@ function BenchmarkBar({ label, pct, color, maxAbs }: { label: string; pct: numbe
   }
   const width = maxAbs > 0 ? Math.max(4, (Math.abs(pct) / maxAbs) * 100) : 0;
   return (
-    <div className="flex items-center gap-3 text-sm">
-      <span className="w-24 text-text-muted">{label}</span>
-      <span className="font-figures w-16" style={{ color }}>
+    <div className="flex items-center gap-2 md:gap-3 text-sm">
+      <span className="w-16 md:w-24 text-text-muted truncate">{label}</span>
+      <span className="font-figures w-14 md:w-16 shrink-0" style={{ color }}>
         {fmtPct(pct)}
       </span>
-      <div className="flex-1 h-2 bg-bg-hover rounded-btn overflow-hidden">
+      <div className="flex-1 min-w-0 h-2 bg-bg-hover rounded-btn overflow-hidden">
         <div className="h-full rounded-btn" style={{ width: `${width}%`, background: color }} />
       </div>
     </div>
@@ -224,7 +224,7 @@ export default function Performance() {
         />
       </div>
 
-      <div className="bg-bg-card border border-border rounded-card px-6 py-5">
+      <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
             Portfolio-Wert
@@ -246,30 +246,32 @@ export default function Performance() {
         {chartData.length === 0 ? (
           <p className="text-text-muted text-sm py-8 text-center">Noch keine Performance-Daten.</p>
         ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={chartData}>
-              <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
-              <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} />
-              <YAxis
-                stroke="var(--color-text-muted)"
-                fontSize={11}
-                domain={["auto", "auto"]}
-                tickFormatter={(v) => `$${v}`}
-              />
-              <Tooltip
-                contentStyle={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 3 }}
-                labelStyle={{ color: "var(--color-text-muted)" }}
-                formatter={(value) => [fmtUsd(Number(value)), "Portfolio"]}
-              />
-              <Line type="monotone" dataKey="wert" stroke="var(--color-gold)" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="h-48 md:h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" />
+                <XAxis dataKey="date" stroke="var(--color-text-muted)" fontSize={11} />
+                <YAxis
+                  stroke="var(--color-text-muted)"
+                  fontSize={11}
+                  domain={["auto", "auto"]}
+                  tickFormatter={(v) => `$${v}`}
+                />
+                <Tooltip
+                  contentStyle={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 3 }}
+                  labelStyle={{ color: "var(--color-text-muted)" }}
+                  formatter={(value) => [fmtUsd(Number(value)), "Portfolio"]}
+                />
+                <Line type="monotone" dataKey="wert" stroke="var(--color-gold)" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
       <TradeHistorySection />
 
-      <div className="bg-bg-card border border-border rounded-card px-6 py-5">
+      <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-4">
           Performance-Vergleich (30 Tage)
         </div>
