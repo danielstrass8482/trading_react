@@ -360,55 +360,57 @@ function EntrySlotsSection() {
           />
         </label>
       </div>
-      <div className="bg-bg-card border border-border rounded-card px-4 py-4 overflow-x-auto">
-        <table className="w-full min-w-[500px] text-xs md:text-sm">
-          <thead>
-            <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
-              <th className="text-left py-2 font-semibold">Zeit ET</th>
-              <th className="text-right py-2 font-semibold">Gewichtung</th>
-              <th className="text-right py-2 font-semibold">Ø G/V</th>
-              <th className="text-right py-2 font-semibold">Trefferquote</th>
-              <th className="text-left py-2 font-semibold">Quelle</th>
-              <th className="text-right py-2 font-semibold">Aktiv</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slots.map((s) => (
-              <tr key={s.id} className="border-b border-border/50 last:border-0">
-                <td className="py-2 font-figures">
-                  {String(s.stunde_et).padStart(2, "0")}:{String(s.minute_et).padStart(2, "0")}
-                </td>
-                <td className="py-2 text-right">
-                  <input
-                    type="number"
-                    step={0.1}
-                    min={0}
-                    defaultValue={s.gewichtung}
-                    onBlur={(e) => {
-                      const val = Number(e.target.value);
-                      if (val !== s.gewichtung) slotMutation.mutate({ id: s.id, gewichtung: val });
-                    }}
-                    className="w-16 bg-bg-app border border-border rounded-btn px-1.5 py-0.5 text-right font-figures"
-                  />
-                </td>
-                <td className={`py-2 text-right font-figures ${s.avg_pnl != null ? gainLossClass(s.avg_pnl) : "text-text-muted"}`}>
-                  {s.avg_pnl != null ? fmtPct(s.avg_pnl) : "–"}
-                </td>
-                <td className="py-2 text-right font-figures text-text-muted">
-                  {s.trefferquote != null ? `${s.trefferquote.toFixed(0)}%` : "–"} ({s.anzahl_trades})
-                </td>
-                <td className="py-2 text-text-muted capitalize">{s.quelle}</td>
-                <td className="py-2 text-right">
-                  <input
-                    type="checkbox"
-                    checked={s.aktiv}
-                    onChange={(e) => slotMutation.mutate({ id: s.id, aktiv: e.target.checked })}
-                  />
-                </td>
+      <div className="bg-bg-card border border-border rounded-card px-4 py-4">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full min-w-0 text-xs md:text-sm">
+            <thead>
+              <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
+                <th className="text-left py-2 font-semibold">Zeit ET</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Gewichtung</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Ø G/V</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Trefferquote</th>
+                <th className="text-left py-2 font-semibold hidden md:table-cell">Quelle</th>
+                <th className="text-right py-2 font-semibold">Aktiv</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {slots.map((s) => (
+                <tr key={s.id} className="border-b border-border/50 last:border-0">
+                  <td className="py-2 font-figures">
+                    {String(s.stunde_et).padStart(2, "0")}:{String(s.minute_et).padStart(2, "0")}
+                  </td>
+                  <td className="py-2 text-right hidden md:table-cell">
+                    <input
+                      type="number"
+                      step={0.1}
+                      min={0}
+                      defaultValue={s.gewichtung}
+                      onBlur={(e) => {
+                        const val = Number(e.target.value);
+                        if (val !== s.gewichtung) slotMutation.mutate({ id: s.id, gewichtung: val });
+                      }}
+                      className="w-16 bg-bg-app border border-border rounded-btn px-1.5 py-0.5 text-right font-figures"
+                    />
+                  </td>
+                  <td className={`py-2 text-right font-figures hidden md:table-cell ${s.avg_pnl != null ? gainLossClass(s.avg_pnl) : "text-text-muted"}`}>
+                    {s.avg_pnl != null ? fmtPct(s.avg_pnl) : "–"}
+                  </td>
+                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
+                    {s.trefferquote != null ? `${s.trefferquote.toFixed(0)}%` : "–"} ({s.anzahl_trades})
+                  </td>
+                  <td className="py-2 text-text-muted capitalize hidden md:table-cell">{s.quelle}</td>
+                  <td className="py-2 text-right">
+                    <input
+                      type="checkbox"
+                      checked={s.aktiv}
+                      onChange={(e) => slotMutation.mutate({ id: s.id, aktiv: e.target.checked })}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

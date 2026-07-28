@@ -92,8 +92,9 @@ const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   {
     key: "ticker", label: "Ticker",
     render: (r) => (
-      <span className="flex items-center gap-1.5">
-        {r.ticker} {brokerBadge(r.broker)}
+      <span className="flex items-center gap-1.5 min-w-0">
+        <span className="block max-w-[60px] truncate md:max-w-none">{r.ticker}</span>
+        {brokerBadge(r.broker)}
       </span>
     ),
   },
