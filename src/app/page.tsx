@@ -29,8 +29,8 @@ function App() {
       <AlpacaOnboarding />
       <MobileTopbar />
       <Sidebar active={active} onSelect={setActive} />
-      <div className="flex-1">
-        <main className="pt-14 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 px-4 md:px-8 py-4 md:py-6 max-w-[1400px] w-full">
+      <div className="flex-1 min-w-0">
+        <main className="pt-14 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 px-4 md:px-8 py-4 md:py-6 max-w-[1400px] w-full min-w-0">
           <ActiveTab />
         </main>
       </div>

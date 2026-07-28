@@ -23,24 +23,47 @@ function checkCell(value: number | null) {
 function statusCell(row: ScanLogEntry) {
   if (row.ko_reason) {
     const isFairValueKo = row.ko_reason.includes("Fair Value");
+    const colorCls = isFairValueKo ? "text-orange-400" : "text-loss";
+    const badgeCls = isFairValueKo ? "bg-orange-400/15 text-orange-400" : "bg-loss/15 text-loss";
     return (
-      <span className={`flex items-center gap-1.5 ${isFairValueKo ? "text-orange-400" : "text-loss"}`}>
-        <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
-      </span>
+      <>
+        <span
+          className={`md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn ${badgeCls}`}
+          title={`KO: ${row.ko_reason}`}
+        >
+          KO
+        </span>
+        <span className={`hidden md:flex items-center gap-1.5 ${colorCls}`}>
+          <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
+        </span>
+      </>
     );
   }
   if (row.trade_executed) {
     return (
-      <span className="text-gain flex items-center gap-1.5">
-        <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
-      </span>
+      <>
+        <span className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gain/15 text-gain">
+          Trade
+        </span>
+        <span className="hidden md:flex text-gain items-center gap-1.5">
+          <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
+        </span>
+      </>
     );
   }
   if (row.approved) {
     return (
-      <span className="text-gold flex items-center gap-1.5">
-        <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
-      </span>
+      <>
+        <span
+          className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gold/15 text-gold"
+          title={row.guardrail_reason ? `Guardrail: ${row.guardrail_reason}` : "Guardrail"}
+        >
+          Guardrail
+        </span>
+        <span className="hidden md:flex text-gold items-center gap-1.5">
+          <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
+        </span>
+      </>
     );
   }
   return <span className="text-text-muted">– Score zu niedrig</span>;
@@ -49,7 +72,7 @@ function statusCell(row: ScanLogEntry) {
 function brokerBadge(broker: string | null | undefined) {
   const b = (broker ?? "alpaca").toLowerCase();
   return (
-    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
+    <span className={`hidden md:inline text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
       {b.toUpperCase()}
     </span>
   );
