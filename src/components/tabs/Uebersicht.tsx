@@ -112,12 +112,35 @@ export default function Uebersicht() {
           return sum + p.unrealized_pnl * rate;
         }, 0)
       : null;
-  const unrealizedPnlUsdOnly = data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
+  // Broker-Wahrheit (data.unrealized_pnl, direkt von Alpaca summiert) statt
+  // der eigenen yfinance-Näherung – Fallback nur falls Alpaca gerade nicht
+  // erreichbar war (siehe trading_api.get_overview).
+  const unrealizedPnlUsdOnly = data.unrealized_pnl ?? data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 md:gap-4">
-        <KPICard label="Alpaca-Konto" value={fmtUsd(data.portfolio_value, 2)} color="neutral" subtext="USD, eigenes Budget" />
+      {/* "Verfügbares Kapital" (Cash) und "Gebunden in Positionen" ersetzen
+          die bisherige einzelne "Alpaca-Konto"-Karte (Cash+Marktwert
+          kombiniert, Alpaca equity) und stehen bewusst an erster Stelle
+          (siehe Modul-Auftrag "Cashflow/Positionswert trennen") – die
+          Kombination suggerierte mehr frei verfügbares Kapital für neue
+          Trades als tatsächlich da war. "Kontowert gesamt" (Cash+Positionen)
+          bleibt als sekundäre Kennzahl im Subtext der zweiten Karte.
+          Realisiert/Unrealisiert bleiben unverändert eigene Karten weiter
+          unten (bereits klar getrennt) – hier nicht dupliziert. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2 md:gap-4">
+        <KPICard
+          label="Verfügbares Kapital"
+          value={data.cash !== null ? fmtUsd(data.cash, 2) : "–"}
+          color="gold"
+          subtext="Cash, für neue Trades frei"
+        />
+        <KPICard
+          label="Gebunden in Positionen"
+          value={data.long_market_value !== null ? fmtUsd(data.long_market_value, 2) : "–"}
+          color="neutral"
+          subtext={`Kontowert gesamt: ${fmtUsd(data.portfolio_value, 2)}`}
+        />
         <KPICard
           label="Saxo-Konto"
           value={saxo ? fmtMoney(saxo.portfolio_value_eur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
@@ -227,7 +250,7 @@ export default function Uebersicht() {
                       <div>TP: {fmtMoney(t.take_profit, t.currency)}</div>
                     </div>
                     <div className="text-xs text-text-muted mt-1.5">
-                      {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
+                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
                     </div>
                   </div>
 
@@ -262,6 +285,10 @@ export default function Uebersicht() {
                         <span className="text-text-muted">TP </span>
                         <span className="text-gain">{fmtMoney(t.take_profit, t.currency)}</span>
                       </div>
+                    </div>
+
+                    <div className="text-[10px] text-text-muted mb-2">
+                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück
                     </div>
 
                     <div className="flex items-center gap-2 pt-2 border-t border-border">

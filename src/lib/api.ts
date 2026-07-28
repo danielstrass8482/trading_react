@@ -53,7 +53,14 @@ export type OpenTrade = {
 };
 
 export type Overview = {
+  // Gesamt-Kontowert (cash + long_market_value) – broker-live von Alpaca
+  // wenn erreichbar, sonst yfinance-Näherung (siehe trading_api.get_overview).
   portfolio_value: number;
+  // Direkt von Alpaca (GET /v2/account): null falls Alpaca gerade nicht
+  // erreichbar war (Frontend zeigt dann "–" statt eines falschen Werts).
+  cash: number | null;              // verfügbares Kapital für neue Trades
+  long_market_value: number | null; // gebunden in offenen Positionen (Marktwert)
+  unrealized_pnl: number | null;    // Summe unrealized_pl aller offenen Alpaca-Positionen (Broker-Wahrheit)
   realized_pnl: number;
   open_trades: OpenTrade[];
   daily_trades: number;
@@ -291,6 +298,7 @@ export type CombinedOpenPosition = {
   stop_loss: number;
   take_profit: number;
   quantity: number;
+  capital_used: number;
   rule_score: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
@@ -304,6 +312,7 @@ export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
     ticker: t.ticker, broker: "alpaca", currency: "USD",
     entry_price: t.entry_price, current_price: t.current_price,
     stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
+    capital_used: t.capital_used,
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: t.mode,
   };
@@ -314,6 +323,7 @@ export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
     ticker: t.ticker, broker: "saxo", currency: t.currency,
     entry_price: t.entry_price, current_price: t.current_price,
     stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
+    capital_used: t.capital_used_eur,
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
   };

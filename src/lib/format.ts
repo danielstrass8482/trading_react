@@ -39,15 +39,14 @@ export function fmtZahl(value: number | null | undefined, digits = 2): string {
   return value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-// Für Mengen/Stückzahlen (Fractional Shares): ganze Zahlen ohne
-// Nachkommastellen, Bruchteile mit 4 Nachkommastellen (Alpaca rundet
-// Fractional-Qty auf 6, aber 4 sind für die Anzeige lesbar genug).
+// Für Mengen/Stückzahlen (Fractional Shares): max. 2 Nachkommastellen in der
+// ANZEIGE (ganze Zahlen ohne Nachkommastellen, Bruchteile gerundet auf 2) –
+// die zugrunde liegende Precision (Alpaca liefert bis zu 6 Nachkommastellen)
+// bleibt in DB/Berechnungen unverändert, hier wird nur für die Darstellung
+// gerundet (z.B. 0.3274 -> "0,33").
 export function fmtMenge(value: number | null | undefined): string {
   if (value === null || value === undefined) return "–";
-  if (Number.isInteger(value)) {
-    return value.toLocaleString("de-DE", { maximumFractionDigits: 0 });
-  }
-  return value.toLocaleString("de-DE", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  return value.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
 export function gainLossClass(value: number | null | undefined): string {

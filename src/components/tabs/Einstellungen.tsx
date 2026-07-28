@@ -463,6 +463,7 @@ function EntrySlotsSection() {
 const PROPOSAL_TYPE_LABELS: Record<string, string> = {
   threshold_optimierung: "Score-Schwellwert-Optimierung",
   watchlist_optimierung: "Watchlist-Optimierung",
+  schwellenwert_wirksamkeit: "Schwellenwert-Wirksamkeit",
 };
 
 function LearningProposalCard({ proposal }: { proposal: LearningProposal }) {
