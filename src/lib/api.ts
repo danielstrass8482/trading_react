@@ -161,6 +161,11 @@ export type TradeHistoryEntry = {
   created_at: string;
   closed_at: string | null;
   exit_grund: string;
+  // Nur gesetzt wenn status === "OPEN" (siehe trading_api.py get_trade_history) –
+  // pnl_usd/pnl_pct bleiben für offene Positionen bewusst NULL (realisierter P&L).
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
 };
 
 export type LearningProposal = {

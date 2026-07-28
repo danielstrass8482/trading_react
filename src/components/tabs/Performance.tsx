@@ -21,15 +21,16 @@ const BENCHMARK_COLORS: Record<string, string> = {
   "Nasdaq": "#a679e0",
 };
 
-const EXIT_GRUND_BADGE: Record<string, string> = {
+const STATUS_BADGE: Record<string, string> = {
+  "Offen": "bg-paper/15 text-paper",
   "Stop Loss": "bg-loss/15 text-loss",
   "Take Profit": "bg-gain/15 text-gain",
   "Trailing Stop": "bg-gold/15 text-gold",
   "Time Exit (5 Tage)": "bg-text-muted/15 text-text-muted",
 };
 
-function exitGrundBadge(grund: string) {
-  const cls = EXIT_GRUND_BADGE[grund] ?? "bg-text-muted/15 text-text-muted";
+function statusBadge(grund: string) {
+  const cls = STATUS_BADGE[grund] ?? "bg-text-muted/15 text-text-muted";
   return (
     <span className={`inline-block text-[0.65rem] font-semibold px-2 py-0.5 rounded-btn leading-tight md:whitespace-nowrap ${cls}`}>
       {grund}
@@ -47,7 +48,11 @@ function TradeHistorySection() {
     queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { limit: 50 } }).then((r) => r.data),
   });
 
+  // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl_usd
+  // ist für OPEN-Trades unverändert NULL, siehe trading_api.get_trade_history) –
+  // das ist weiterhin der realisierte P&L, keine Änderung an dieser Definition.
   const closed = history.filter((t) => t.pnl_usd !== null);
+  const offen = history.filter((t) => t.status === "OPEN");
   const gewinner = closed.filter((t) => (t.pnl_usd ?? 0) > 0).length;
   const verlierer = closed.filter((t) => (t.pnl_usd ?? 0) <= 0).length;
   const gesamtPnl = closed.reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
@@ -58,9 +63,10 @@ function TradeHistorySection() {
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
           Handelshistorie
         </div>
-        {!isLoading && closed.length > 0 && (
+        {!isLoading && history.length > 0 && (
           <div className="text-xs text-text-muted font-figures flex flex-wrap gap-x-3 gap-y-1">
-            <span>Trades: {closed.length}</span>
+            {offen.length > 0 && <span className="text-paper">Offen: {offen.length}</span>}
+            <span>Geschlossen: {closed.length}</span>
             <span className="text-gain">Gewinner: {gewinner}</span>
             <span className="text-loss">Verlierer: {verlierer}</span>
             <span className={gainLossClass(gesamtPnl)}>P&L: {fmtUsdSigned(gesamtPnl)}</span>
@@ -71,7 +77,7 @@ function TradeHistorySection() {
       {isLoading ? (
         <TableSkeleton />
       ) : history.length === 0 ? (
-        <p className="text-text-muted text-sm py-4 text-center">Noch keine abgeschlossenen Trades.</p>
+        <p className="text-text-muted text-sm py-4 text-center">Noch keine Trades.</p>
       ) : (
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <table className="w-full table-fixed text-xs md:text-sm">
@@ -90,47 +96,56 @@ function TradeHistorySection() {
                 <th className="text-left py-2 font-semibold">Datum</th>
                 <th className="text-left py-2 font-semibold">Ticker</th>
                 <th className="text-right py-2 font-semibold hidden md:table-cell">Entry</th>
-                <th className="text-right py-2 font-semibold hidden md:table-cell">Exit</th>
+                <th className="text-right py-2 font-semibold hidden md:table-cell">Kurs</th>
                 <th className="text-right py-2 font-semibold hidden md:table-cell">Menge</th>
                 <th className="text-right py-2 font-semibold">P&L</th>
-                <th className="text-left py-2 font-semibold">Grund</th>
+                <th className="text-left py-2 font-semibold">Status</th>
                 <th className="text-right py-2 font-semibold hidden md:table-cell">Score</th>
               </tr>
             </thead>
             <tbody>
-              {history.map((t, i) => (
-                <tr key={`${t.ticker}-${t.closed_at}-${i}`} className="border-b border-border/50 last:border-0">
-                  <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
-                  <td className="py-2 font-medium truncate">{t.ticker}</td>
-                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtUsd(t.entry_price)}</td>
-                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
-                    {t.exit_price != null ? fmtUsd(t.exit_price) : "–"}
-                  </td>
-                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
-                  <td className="py-2 text-right">
-                    {t.pnl_usd != null ? (
-                      <>
-                        <div className={`md:hidden font-figures font-semibold text-sm ${gainLossClass(t.pnl_usd)}`}>
-                          {fmtUsdSigned(t.pnl_usd)}
-                        </div>
-                        {t.pnl_pct != null && (
-                          <div className="md:hidden text-[11px] text-text-muted font-figures">
-                            ({t.pnl_pct >= 0 ? "+" : ""}{t.pnl_pct.toFixed(1)}%)
+              {history.map((t, i) => {
+                const isOpen = t.status === "OPEN";
+                // "Kurs"-Spalte: bei offenen Positionen der Live-Kurs statt des
+                // (noch nicht existierenden) Exit-Preises; "P&L"-Spalte: bei
+                // offenen Positionen der unrealisierte statt realisierte P&L.
+                const kurs = isOpen ? t.current_price : t.exit_price;
+                const pnl = isOpen ? t.unrealized_pnl : t.pnl_usd;
+                const pnlPct = isOpen ? t.unrealized_pnl_pct : t.pnl_pct;
+                return (
+                  <tr key={`${t.ticker}-${t.closed_at ?? t.created_at}-${i}`} className="border-b border-border/50 last:border-0">
+                    <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
+                    <td className="py-2 font-medium truncate">{t.ticker}</td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtUsd(t.entry_price)}</td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
+                      {kurs != null ? fmtUsd(kurs) : "–"}
+                    </td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
+                    <td className="py-2 text-right">
+                      {pnl != null ? (
+                        <>
+                          <div className={`md:hidden font-figures font-semibold text-sm ${gainLossClass(pnl)}`}>
+                            {fmtUsdSigned(pnl)}
                           </div>
-                        )}
-                        <div className={`hidden md:block font-figures whitespace-nowrap ${gainLossClass(t.pnl_usd)}`}>
-                          {fmtUsdSigned(t.pnl_usd)}
-                          {t.pnl_pct != null && ` (${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct.toFixed(1)}%)`}
-                        </div>
-                      </>
-                    ) : (
-                      "–"
-                    )}
-                  </td>
-                  <td className="py-2">{exitGrundBadge(t.exit_grund)}</td>
-                  <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
-                </tr>
-              ))}
+                          {pnlPct != null && (
+                            <div className="md:hidden text-[11px] text-text-muted font-figures">
+                              ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
+                            </div>
+                          )}
+                          <div className={`hidden md:block font-figures whitespace-nowrap ${gainLossClass(pnl)}`}>
+                            {fmtUsdSigned(pnl)}
+                            {pnlPct != null && ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                          </div>
+                        </>
+                      ) : (
+                        "–"
+                      )}
+                    </td>
+                    <td className="py-2">{statusBadge(t.exit_grund)}</td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
