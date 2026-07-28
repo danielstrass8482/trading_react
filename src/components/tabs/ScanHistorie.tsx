@@ -90,9 +90,9 @@ function formatTag(datum: string): string {
 
 const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   {
-    key: "ticker", label: "Ticker", width: "w-[30%] md:w-28",
+    key: "ticker", label: "Ticker", align: "center", width: "w-[30%] md:w-28",
     render: (r) => (
-      <span className="flex items-center gap-1.5 min-w-0">
+      <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
         <span className="block min-w-0 truncate font-semibold">{r.ticker}</span>
         {brokerBadge(r.broker)}
       </span>
@@ -109,7 +109,7 @@ const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
     key: "market_regime", label: "Regime", align: "center", width: "w-12",
     render: (r) => regimeIcon(r.market_regime), hideOnMobile: true,
   },
-  { key: "status", label: "Status", width: "w-[50%] md:w-auto", render: (r) => statusCell(r) },
+  { key: "status", label: "Status", align: "center", width: "w-[50%] md:w-auto", render: (r) => statusCell(r) },
 ];
 
 function ScanSlotBlock({ day, slot, open, onToggle }: {
