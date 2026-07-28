@@ -67,8 +67,8 @@ function TradeHistorySection() {
       ) : history.length === 0 ? (
         <p className="text-text-muted text-sm py-4 text-center">Noch keine abgeschlossenen Trades.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <table className="w-full min-w-[600px] text-sm">
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
                 <th className="text-left py-2 font-semibold">Datum</th>
@@ -197,7 +197,7 @@ export default function Performance() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-7 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-7 gap-2 md:gap-4">
         <KPICard label="Trades gesamt" value={String(stats.total_trades ?? 0)} color="neutral" />
         <KPICard
           label="Trefferquote"

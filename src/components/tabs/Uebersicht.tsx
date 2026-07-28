@@ -81,7 +81,7 @@ export default function Uebersicht() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 md:gap-4">
         <KPICard label="Portfolio-Wert" value={fmtUsd(data.portfolio_value, 2)} color="neutral" />
         <KPICard
           label="Realisierter P&L"
@@ -140,35 +140,83 @@ export default function Uebersicht() {
           <p className="text-text-muted text-sm">Keine offenen Positionen.</p>
         ) : (
           <div className="space-y-2">
-            {data.open_trades.map((t) => (
-              <div key={t.ticker} className="bg-bg-card border border-border rounded-card px-4 py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="font-medium flex items-center gap-1.5">
-                    {t.ticker}
-                    <span className="flex items-center gap-1 text-gold text-xs">
-                      <Bot size={14} strokeWidth={1.5} /> {t.mode}
-                    </span>
-                    {brokerBadge(t.broker)}
+            {data.open_trades.map((t) => {
+              const slLabel = t.trailing_sl_active ? "TSL" : "SL";
+              const slValue = fmtUsd(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss);
+              return (
+                <div key={t.ticker}>
+                  {/* Desktop: kompakte Zeile */}
+                  <div className="hidden md:block bg-bg-card border border-border rounded-card px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium flex items-center gap-1.5">
+                        {t.ticker}
+                        <span className="flex items-center gap-1 text-gold text-xs">
+                          <Bot size={14} strokeWidth={1.5} /> {t.mode}
+                        </span>
+                        {brokerBadge(t.broker)}
+                      </div>
+                      <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
+                        {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
+                        {t.unrealized_pnl_pct.toFixed(1)}%)
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-figures text-text-muted">
+                      <div>Entry: {fmtUsd(t.entry_price)}</div>
+                      <div>Aktuell: {fmtUsd(t.current_price)}</div>
+                      <div className={t.trailing_sl_active ? "text-gold font-semibold" : undefined}>
+                        {slLabel}: {slValue}
+                      </div>
+                      <div>TP: {fmtUsd(t.take_profit)}</div>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1.5">
+                      {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
+                    </div>
                   </div>
-                  <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
-                    {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
-                    {t.unrealized_pnl_pct.toFixed(1)}%)
+
+                  {/* Mobile: großes Card-Format */}
+                  <div className="md:hidden bg-bg-card border border-border rounded-card p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-base">{t.ticker}</span>
+                        <span className="text-[9px] border border-live text-live rounded px-1.5 py-0.5">{t.mode}</span>
+                        {brokerBadge(t.broker)}
+                      </div>
+                      <span className={`text-sm font-semibold font-figures ${gainLossClass(t.unrealized_pnl)}`}>
+                        {fmtUsdSigned(t.unrealized_pnl)} ({t.unrealized_pnl_pct >= 0 ? "+" : ""}
+                        {t.unrealized_pnl_pct.toFixed(1)}%)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 text-xs font-figures mb-2">
+                      <div>
+                        <span className="text-text-muted">Entry </span>
+                        <span>{fmtUsd(t.entry_price)}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">Aktuell </span>
+                        <span>{fmtUsd(t.current_price)}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">{slLabel} </span>
+                        <span className={t.trailing_sl_active ? "text-gold" : "text-loss"}>{slValue}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">TP </span>
+                        <span className="text-gain">{fmtUsd(t.take_profit)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-border">
+                      <span className="text-[10px] text-text-muted">Score</span>
+                      <div className="flex-1 h-[3px] bg-border rounded-full">
+                        <div className="h-[3px] bg-gold rounded-full" style={{ width: `${t.rule_score}%` }} />
+                      </div>
+                      <span className="text-xs text-gold font-semibold font-figures">{t.rule_score}</span>
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-figures text-text-muted">
-                  <div>Entry: {fmtUsd(t.entry_price)}</div>
-                  <div>Aktuell: {fmtUsd(t.current_price)}</div>
-                  <div className={t.trailing_sl_active ? "text-gold font-semibold" : undefined}>
-                    {t.trailing_sl_active ? "TSL" : "SL"}:{" "}
-                    {fmtUsd(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss)}
-                  </div>
-                  <div>TP: {fmtUsd(t.take_profit)}</div>
-                </div>
-                <div className="text-xs text-text-muted mt-1.5">
-                  {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

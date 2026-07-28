@@ -19,14 +19,14 @@ export default function KPICard({
   subtext?: React.ReactNode;
 }) {
   return (
-    <div className="bg-bg-card border border-border rounded-card px-6 py-5">
-      <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-1.5">
+    <div className="bg-bg-card border border-border rounded-card px-3 py-3 md:px-6 md:py-5">
+      <div className="text-[10px] md:text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-1 md:mb-1.5">
         {label}
       </div>
-      <div className={`font-figures text-[1.8rem] font-semibold leading-tight ${COLOR_CLASS[color]}`}>
+      <div className={`font-figures text-2xl md:text-[1.8rem] font-semibold leading-tight ${COLOR_CLASS[color]}`}>
         {value}
       </div>
-      {subtext && <div className="text-xs text-text-muted mt-1">{subtext}</div>}
+      {subtext && <div className="text-[10px] md:text-xs text-text-muted mt-0.5 md:mt-1">{subtext}</div>}
     </div>
   );
 }

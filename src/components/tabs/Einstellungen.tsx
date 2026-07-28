@@ -119,7 +119,7 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Risiko-Presets</h3>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {PRESETS.map((p) => (
           <button
             key={p.key}
@@ -360,8 +360,8 @@ function EntrySlotsSection() {
           />
         </label>
       </div>
-      <div className="bg-bg-card border border-border rounded-card px-4 py-4">
-        <table className="w-full text-sm">
+      <div className="bg-bg-card border border-border rounded-card px-4 py-4 overflow-x-auto">
+        <table className="w-full min-w-[500px] text-sm">
           <thead>
             <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
               <th className="text-left py-2 font-semibold">Zeit ET</th>
@@ -522,7 +522,7 @@ export default function Einstellungen() {
 
       <div className="space-y-3">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Guardrails</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {GUARDRAIL_KEYS.filter((k) => k in config).map((key) => (
             <GuardrailCard key={key} botKey={key} value={config[key]} config={config} />
           ))}

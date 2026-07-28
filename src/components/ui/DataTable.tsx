@@ -32,8 +32,8 @@ export default function DataTable<T extends { [key: string]: unknown }>({
     a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left";
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">
+    <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+      <table className="w-full min-w-[600px] border-collapse text-sm">
         <thead>
           <tr className="border-b-2 border-border-accent">
             {columns.map((col) => (

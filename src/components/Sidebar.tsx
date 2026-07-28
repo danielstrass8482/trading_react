@@ -1,6 +1,7 @@
 "use client";
 
-import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut } from "lucide-react";
+import { useState } from "react";
+import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
 import { logout } from "@/lib/auth";
@@ -13,6 +14,16 @@ const NAV_ITEMS: { key: TabKey; label: string; icon: React.ComponentType<{ size?
   { key: "scanhistorie", label: "Scan-Historie", icon: Search },
   { key: "einstellungen", label: "Einstellungen", icon: Settings },
   { key: "dokumentation", label: "Dokumentation", icon: BookOpen },
+];
+
+// Bottom-Nav zeigt nur die 4 Kernbereiche direkt; Dokumentation + Logout
+// landen im "Mehr"-Sheet, damit auf schmalen Screens nur 5 Items nötig sind.
+const BOTTOM_NAV_ITEMS: { key: TabKey | "mehr"; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> }[] = [
+  { key: "uebersicht", label: "Übersicht", icon: BarChart2 },
+  { key: "performance", label: "Performance", icon: TrendingUp },
+  { key: "scanhistorie", label: "Scan", icon: Search },
+  { key: "einstellungen", label: "Einstellungen", icon: Settings },
+  { key: "mehr", label: "Mehr", icon: Menu },
 ];
 
 const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
@@ -82,9 +93,11 @@ export default function Sidebar({
 
   const cfg = Object.fromEntries((config ?? []).map((c) => [c.key, c.value]));
   const isLive = overview?.trading_mode === "LIVE";
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
-    <aside className="w-64 shrink-0 bg-bg-sidebar border-r border-border min-h-screen flex flex-col px-4 py-6">
+    <>
+    <aside className="hidden md:flex md:flex-col w-64 shrink-0 bg-bg-sidebar border-r border-border min-h-screen px-4 py-6">
       <div className="mb-8 px-2">
         <div className="text-xl font-semibold text-gold">AI Trading Bot</div>
         <div className="text-xs text-text-muted mt-0.5">by Portfolio-OS</div>
@@ -158,5 +171,55 @@ export default function Sidebar({
         </button>
       </div>
     </aside>
+
+    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-bg-sidebar border-t border-border pb-[env(safe-area-inset-bottom)] md:hidden">
+      <div className="flex justify-around items-center h-16">
+        {BOTTOM_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+          const isActive = key === "mehr" ? active === "dokumentation" : key === active;
+          return (
+            <button
+              key={key}
+              onClick={() => (key === "mehr" ? setSheetOpen(true) : onSelect(key))}
+              className="flex flex-col items-center gap-1 py-2 px-3"
+            >
+              <Icon size={22} strokeWidth={1.5} className={isActive ? "text-gold" : "text-text-muted"} />
+              <span className={`text-[9px] ${isActive ? "text-gold" : "text-text-muted"}`}>{label}</span>
+              {isActive && <div className="w-1 h-1 rounded-full bg-gold" />}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+
+    {sheetOpen && (
+      <div
+        className="fixed inset-0 z-50 md:hidden"
+        style={{ background: "rgba(0,0,0,0.5)" }}
+        onClick={() => setSheetOpen(false)}
+      >
+        <div
+          className="absolute bottom-0 left-0 right-0 bg-bg-sidebar rounded-t-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
+          <button
+            onClick={() => {
+              onSelect("dokumentation");
+              setSheetOpen(false);
+            }}
+            className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
+          >
+            <BookOpen size={18} strokeWidth={1.5} /> Dokumentation
+          </button>
+          <button
+            onClick={logout}
+            className="w-full flex items-center gap-3 px-3 py-3 text-sm text-loss hover:bg-bg-hover rounded-nav"
+          >
+            <LogOut size={18} strokeWidth={1.5} /> Abmelden
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
