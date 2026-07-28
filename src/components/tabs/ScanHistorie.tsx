@@ -90,7 +90,7 @@ function formatTag(datum: string): string {
 
 const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   {
-    key: "ticker", label: "Ticker", width: "w-16 md:w-28",
+    key: "ticker", label: "Ticker", width: "w-[30%] md:w-28",
     render: (r) => (
       <span className="flex items-center gap-1.5 min-w-0">
         <span className="block min-w-0 truncate font-semibold">{r.ticker}</span>
@@ -98,7 +98,7 @@ const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
       </span>
     ),
   },
-  { key: "score", label: "Score", align: "right", width: "w-14", render: (r) => <span className="font-figures">{r.score}</span> },
+  { key: "score", label: "Score", align: "center", width: "w-[20%] md:w-14", render: (r) => <span className="font-figures">{r.score}</span> },
   { key: "rsi_score", label: "RSI", align: "center", width: "w-12", render: (r) => checkCell(r.rsi_score), hideOnMobile: true },
   { key: "sma_score", label: "SMA", align: "center", width: "w-12", render: (r) => checkCell(r.sma_score), hideOnMobile: true },
   { key: "volume_score", label: "Vol", align: "center", width: "w-12", render: (r) => checkCell(r.volume_score), hideOnMobile: true },
@@ -109,7 +109,7 @@ const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
     key: "market_regime", label: "Regime", align: "center", width: "w-12",
     render: (r) => regimeIcon(r.market_regime), hideOnMobile: true,
   },
-  { key: "status", label: "Status", render: (r) => statusCell(r) },
+  { key: "status", label: "Status", width: "w-[50%] md:w-auto", render: (r) => statusCell(r) },
 ];
 
 function ScanSlotBlock({ day, slot, open, onToggle }: {
