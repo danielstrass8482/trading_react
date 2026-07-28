@@ -30,7 +30,11 @@ const EXIT_GRUND_BADGE: Record<string, string> = {
 
 function exitGrundBadge(grund: string) {
   const cls = EXIT_GRUND_BADGE[grund] ?? "bg-text-muted/15 text-text-muted";
-  return <span className={`text-[0.65rem] font-semibold px-2 py-0.5 rounded-btn whitespace-nowrap ${cls}`}>{grund}</span>;
+  return (
+    <span className={`inline-block text-[0.65rem] font-semibold px-2 py-0.5 rounded-btn leading-tight md:whitespace-nowrap ${cls}`}>
+      {grund}
+    </span>
+  );
 }
 
 function formatDatum(iso: string): string {
@@ -55,9 +59,11 @@ function TradeHistorySection() {
           Handelshistorie
         </div>
         {!isLoading && closed.length > 0 && (
-          <div className="text-xs text-text-muted font-figures">
-            Abgeschlossene Trades: {closed.length} · Gewinner: {gewinner} · Verlierer: {verlierer} · Gesamt P&L:{" "}
-            <span className={gainLossClass(gesamtPnl)}>{fmtUsdSigned(gesamtPnl)}</span>
+          <div className="text-xs text-text-muted font-figures flex flex-wrap gap-x-3 gap-y-1">
+            <span>Trades: {closed.length}</span>
+            <span className="text-gain">Gewinner: {gewinner}</span>
+            <span className="text-loss">Verlierer: {verlierer}</span>
+            <span className={gainLossClass(gesamtPnl)}>P&L: {fmtUsdSigned(gesamtPnl)}</span>
           </div>
         )}
       </div>
@@ -68,7 +74,17 @@ function TradeHistorySection() {
         <p className="text-text-muted text-sm py-4 text-center">Noch keine abgeschlossenen Trades.</p>
       ) : (
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <table className="w-full min-w-[500px] text-xs md:text-sm">
+          <table className="w-full table-fixed text-xs md:text-sm">
+            <colgroup>
+              <col className="w-12 md:w-14" />
+              <col className="w-16 md:w-20" />
+              <col className="hidden md:table-column md:w-20" />
+              <col className="hidden md:table-column md:w-20" />
+              <col className="hidden md:table-column md:w-16" />
+              <col />
+              <col className="w-20 md:w-28" />
+              <col className="hidden md:table-column md:w-14" />
+            </colgroup>
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
                 <th className="text-left py-2 font-semibold">Datum</th>
@@ -85,17 +101,27 @@ function TradeHistorySection() {
               {history.map((t, i) => (
                 <tr key={`${t.ticker}-${t.closed_at}-${i}`} className="border-b border-border/50 last:border-0">
                   <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
-                  <td className="py-2 font-medium">{t.ticker}</td>
+                  <td className="py-2 font-medium truncate">{t.ticker}</td>
                   <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtUsd(t.entry_price)}</td>
                   <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
                     {t.exit_price != null ? fmtUsd(t.exit_price) : "–"}
                   </td>
                   <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
-                  <td className={`py-2 text-right font-figures ${gainLossClass(t.pnl_usd ?? 0)}`}>
+                  <td className="py-2 text-right">
                     {t.pnl_usd != null ? (
                       <>
-                        {fmtUsdSigned(t.pnl_usd)}
-                        {t.pnl_pct != null && ` (${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct.toFixed(1)}%)`}
+                        <div className={`md:hidden font-figures font-semibold text-sm ${gainLossClass(t.pnl_usd)}`}>
+                          {fmtUsdSigned(t.pnl_usd)}
+                        </div>
+                        {t.pnl_pct != null && (
+                          <div className="md:hidden text-[11px] text-text-muted font-figures">
+                            ({t.pnl_pct >= 0 ? "+" : ""}{t.pnl_pct.toFixed(1)}%)
+                          </div>
+                        )}
+                        <div className={`hidden md:block font-figures whitespace-nowrap ${gainLossClass(t.pnl_usd)}`}>
+                          {fmtUsdSigned(t.pnl_usd)}
+                          {t.pnl_pct != null && ` (${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct.toFixed(1)}%)`}
+                        </div>
                       </>
                     ) : (
                       "–"

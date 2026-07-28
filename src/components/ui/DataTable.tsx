@@ -6,6 +6,8 @@ export type Column<T> = {
   align?: "left" | "right" | "center";
   render?: (row: T) => React.ReactNode;
   hideOnMobile?: boolean;
+  /** Tailwind width class(es) for the <col>, e.g. "w-16" or "w-16 md:w-24". Omit to let the column fill remaining space. */
+  width?: string;
 };
 
 export default function DataTable<T extends { [key: string]: unknown }>({
@@ -34,7 +36,15 @@ export default function DataTable<T extends { [key: string]: unknown }>({
 
   return (
     <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-      <table className="w-full min-w-[480px] border-collapse text-xs md:text-sm">
+      <table className="w-full table-fixed border-collapse text-xs md:text-sm">
+        <colgroup>
+          {columns.map((col) => (
+            <col
+              key={col.key}
+              className={`${col.hideOnMobile ? "hidden md:table-column" : ""} ${col.width ?? ""}`}
+            />
+          ))}
+        </colgroup>
         <thead>
           <tr className="border-b-2 border-border-accent">
             {columns.map((col) => (

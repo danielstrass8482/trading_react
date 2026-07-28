@@ -90,23 +90,23 @@ function formatTag(datum: string): string {
 
 const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   {
-    key: "ticker", label: "Ticker",
+    key: "ticker", label: "Ticker", width: "w-16 md:w-28",
     render: (r) => (
       <span className="flex items-center gap-1.5 min-w-0">
-        <span className="block max-w-[60px] truncate md:max-w-none">{r.ticker}</span>
+        <span className="block min-w-0 truncate font-semibold">{r.ticker}</span>
         {brokerBadge(r.broker)}
       </span>
     ),
   },
-  { key: "score", label: "Score", align: "right", render: (r) => <span className="font-figures">{r.score}</span> },
-  { key: "rsi_score", label: "RSI", align: "center", render: (r) => checkCell(r.rsi_score), hideOnMobile: true },
-  { key: "sma_score", label: "SMA", align: "center", render: (r) => checkCell(r.sma_score), hideOnMobile: true },
-  { key: "volume_score", label: "Vol", align: "center", render: (r) => checkCell(r.volume_score), hideOnMobile: true },
-  { key: "pe_score", label: "P/E", align: "center", render: (r) => checkCell(r.pe_score), hideOnMobile: true },
-  { key: "de_score", label: "D/E", align: "center", render: (r) => checkCell(r.de_score), hideOnMobile: true },
-  { key: "rev_score", label: "Rev", align: "center", render: (r) => checkCell(r.rev_score), hideOnMobile: true },
+  { key: "score", label: "Score", align: "right", width: "w-14", render: (r) => <span className="font-figures">{r.score}</span> },
+  { key: "rsi_score", label: "RSI", align: "center", width: "w-12", render: (r) => checkCell(r.rsi_score), hideOnMobile: true },
+  { key: "sma_score", label: "SMA", align: "center", width: "w-12", render: (r) => checkCell(r.sma_score), hideOnMobile: true },
+  { key: "volume_score", label: "Vol", align: "center", width: "w-12", render: (r) => checkCell(r.volume_score), hideOnMobile: true },
+  { key: "pe_score", label: "P/E", align: "center", width: "w-12", render: (r) => checkCell(r.pe_score), hideOnMobile: true },
+  { key: "de_score", label: "D/E", align: "center", width: "w-12", render: (r) => checkCell(r.de_score), hideOnMobile: true },
+  { key: "rev_score", label: "Rev", align: "center", width: "w-12", render: (r) => checkCell(r.rev_score), hideOnMobile: true },
   {
-    key: "market_regime", label: "Regime", align: "center",
+    key: "market_regime", label: "Regime", align: "center", width: "w-12",
     render: (r) => regimeIcon(r.market_regime), hideOnMobile: true,
   },
   { key: "status", label: "Status", render: (r) => statusCell(r) },
@@ -125,7 +125,12 @@ function ScanSlotBlock({ day, slot, open, onToggle }: {
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span className="font-figures font-medium">{slot.slot ?? "?"} ET</span>
         <span className="text-text-muted text-xs">
-          [{slot.total} gescannt | {slot.above_threshold} über {MIN_SIGNAL_SCORE} | {slot.trades} Trades | Ø {slot.avg_score.toFixed(0)}]
+          <span className="md:hidden">
+            {slot.total} · {slot.above_threshold}≥{MIN_SIGNAL_SCORE} · {slot.trades}T · Ø{slot.avg_score.toFixed(0)}
+          </span>
+          <span className="hidden md:inline">
+            [{slot.total} gescannt | {slot.above_threshold} über {MIN_SIGNAL_SCORE} | {slot.trades} Trades | Ø {slot.avg_score.toFixed(0)}]
+          </span>
         </span>
       </button>
       {open && (
