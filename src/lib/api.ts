@@ -120,6 +120,23 @@ export type DailySnapshot = {
   trades_count: number;
 };
 
+// Saxo-Pendant zu DailySnapshot – eigener Typ da nur log_date/portfolio_value_eur
+// geliefert werden (Quelle: saxo_daily_position_snapshot, Total-Zeile pro Tag,
+// siehe trading_api_saxo.get_performance). Historie existiert erst seit
+// Einführung des 17:30-CET-Snapshot-Jobs, ist also ggf. kurz.
+export type SaxoDailySnapshot = {
+  log_date: string;
+  portfolio_value_eur: number;
+};
+
+export type SaxoPerformance = {
+  snapshots: SaxoDailySnapshot[];
+};
+
+// Struktur von trades.score_breakdown / saxo_trades.score_breakdown (JSON,
+// siehe rule_engine.calculate_score) – ein Eintrag pro Kriterium.
+export type ScoreBreakdown = Record<string, { score: number; max: number; value: number | string | null }>;
+
 export type TradeStats = {
   total_trades: number | null;
   wins: number | null;
@@ -274,6 +291,14 @@ export type TradeHistoryEntry = {
   current_price: number | null;
   unrealized_pnl: number | null;
   unrealized_pnl_pct: number | null;
+  // Einstiegsbegründung – bereits bei Trade-Erstellung gespeicherte Daten
+  // (llm_analyst.py-Kommentar + rule_engine-Score-Breakdown, siehe
+  // broker.place_trade), keine neue Textgenerierung. llm_summary/llm_sentiment
+  // sind null wenn die LLM-Analyse nicht verfügbar war (degraded mode).
+  llm_summary: string | null;
+  llm_sentiment: number | null;
+  llm_risks: string[];
+  score_breakdown: ScoreBreakdown;
 };
 
 // Rohform von trading_api_saxo.py GET /api/trades/history – bewusst separater
@@ -301,6 +326,10 @@ export type SaxoTradeEntry = {
   current_price: number | null;
   unrealized_pnl: number | null;
   unrealized_pnl_pct: number | null;
+  llm_summary: string | null;
+  llm_sentiment: number | null;
+  llm_risks: string[];
+  score_breakdown: ScoreBreakdown;
 };
 
 // Gemeinsame Anzeige-Form für Performance.tsx, die Alpaca- (USD) und
@@ -326,6 +355,10 @@ export type CombinedTradeEntry = {
   exit_grund: string;
   created_at: string;
   closed_at: string | null;
+  llm_summary: string | null;
+  llm_sentiment: number | null;
+  llm_risks: string[];
+  score_breakdown: ScoreBreakdown;
 };
 
 export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
@@ -336,6 +369,10 @@ export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
     unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     rule_score: t.rule_score, status: t.status, exit_grund: t.exit_grund,
     created_at: t.created_at, closed_at: t.closed_at,
+    // Defensive Fallbacks: älterer Backend-Stand (vor Rollout dieser Felder)
+    // liefert diese Keys schlicht nicht mit.
+    llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
+    llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
   };
 }
 
@@ -347,6 +384,8 @@ export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
     unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     rule_score: t.rule_score, status: t.status, exit_grund: t.exit_grund,
     created_at: t.created_at, closed_at: t.closed_at,
+    llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
+    llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
   };
 }
 

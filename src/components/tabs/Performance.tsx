@@ -1,16 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry,
-  SaxoTradeEntry, SaxoOverview, CombinedTradeEntry, fromAlpacaTrade, fromSaxoTrade,
+  SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, fromAlpacaTrade, fromSaxoTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtUsd, fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
+import { fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
+
+// Deutsche Labels für score_breakdown-Keys (siehe rule_engine.calculate_score
+// in trading_bot bzw. trading_bot_saxo – identische Keys auf beiden Seiten).
+const SCORE_FACTOR_LABELS: Record<string, string> = {
+  rsi: "RSI",
+  sma_trend: "SMA-Trend",
+  volume: "Volumen",
+  pe_ratio: "KGV (P/E)",
+  debt_equity: "Verschuldung (D/E)",
+  revenue_growth: "Umsatzwachstum",
+};
 
 const PERIODS = [
   { key: "1w", label: "1W", days: 7 },
@@ -59,8 +71,15 @@ function brokerBadgeSmall(broker: "alpaca" | "saxo") {
   );
 }
 
-function TradeHistorySection() {
-  const [brokerFilter, setBrokerFilter] = useState<(typeof BROKER_FILTERS)[number]["key"]>("alle");
+const STATUS_FILTERS = [
+  { key: "alle", label: "Alle" },
+  { key: "offen", label: "Offen" },
+  { key: "geschlossen", label: "Geschlossen" },
+] as const;
+
+function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FILTERS)[number]["key"] }) {
+  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["key"]>("alle");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const { data: alpacaHistory = [], isLoading: alpacaLoading } = useQuery({
     queryKey: ["trade-history", "alpaca"],
@@ -93,15 +112,23 @@ function TradeHistorySection() {
     return combined;
   }, [alpacaHistory, saxoHistory]);
 
-  const history = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
+  // Broker-Filter ist jetzt global (siehe Performance()) und bestimmt auch die
+  // Zusammenfassungs-Zeile; der Status-Filter hier ist eine reine
+  // Tabellen-Einschränkung und bleibt bewusst außerhalb der Zusammenfassung
+  // (sonst würde z.B. bei Status="Offen" die Zeile "Geschlossen: 0" zeigen,
+  // obwohl geschlossene Trades für diesen Broker durchaus existieren).
+  const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
+  const history = statusFilter === "alle"
+    ? brokerFiltered
+    : brokerFiltered.filter((t) => (statusFilter === "offen" ? t.status === "OPEN" : t.status !== "OPEN"));
 
   // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl ist
   // für OPEN-Trades unverändert NULL, siehe trading_api(_saxo).py) – das ist
   // weiterhin der realisierte P&L, keine Änderung an dieser Definition. Die
   // Summe wird als EUR-Näherung angezeigt sobald mehr als eine Währung
   // vorkommt (Alpaca=USD, Saxo=EUR/GBP je nach Börse).
-  const closed = history.filter((t) => t.pnl !== null);
-  const offen = history.filter((t) => t.status === "OPEN");
+  const closed = brokerFiltered.filter((t) => t.pnl !== null);
+  const offen = brokerFiltered.filter((t) => t.status === "OPEN");
   const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;
   const verlierer = closed.filter((t) => (t.pnl ?? 0) <= 0).length;
 
@@ -119,12 +146,12 @@ function TradeHistorySection() {
           Handelshistorie
         </div>
         <div className="flex gap-1">
-          {BROKER_FILTERS.map((f) => (
+          {STATUS_FILTERS.map((f) => (
             <button
               key={f.key}
-              onClick={() => setBrokerFilter(f.key)}
+              onClick={() => setStatusFilter(f.key)}
               className={`text-xs px-2.5 py-1 rounded-btn transition-colors ${
-                brokerFilter === f.key ? "bg-gold text-bg-app font-medium" : "text-text-muted hover:text-text-primary"
+                statusFilter === f.key ? "bg-gold text-bg-app font-medium" : "text-text-muted hover:text-text-primary"
               }`}
             >
               {f.label}
@@ -162,15 +189,15 @@ function TradeHistorySection() {
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <table className="w-full table-fixed text-xs md:text-sm">
             <colgroup>
-              <col className="w-12 md:w-14" />
-              <col className="w-16 md:w-20" />
-              <col className="hidden md:table-column md:w-20" />
-              <col className="hidden md:table-column md:w-20" />
-              <col className="hidden md:table-column md:w-16" />
-              <col />
-              <col className="w-20 md:w-28" />
-              <col className="hidden md:table-column md:w-14" />
-              <col className="hidden md:table-column md:w-14" />
+              <col className="w-12 md:w-[10%]" />
+              <col className="w-16 md:w-[10%]" />
+              <col className="hidden md:table-column md:w-[12%]" />
+              <col className="hidden md:table-column md:w-[12%]" />
+              <col className="hidden md:table-column md:w-[9%]" />
+              <col className="md:w-[16%]" />
+              <col className="w-20 md:w-[14%]" />
+              <col className="hidden md:table-column md:w-[9%]" />
+              <col className="hidden md:table-column md:w-[8%]" />
             </colgroup>
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
@@ -194,10 +221,27 @@ function TradeHistorySection() {
                 const kurs = isOpen ? t.current_price : t.exit_price;
                 const pnl = isOpen ? t.unrealized_pnl : t.pnl;
                 const pnlPct = isOpen ? t.unrealized_pnl_pct : t.pnl_pct;
+                const rowKey = `${t.broker}-${t.ticker}-${t.closed_at ?? t.created_at}-${i}`;
+                const scoreFactors = Object.entries(t.score_breakdown);
+                const hasDetails = !!t.llm_summary || t.llm_risks.length > 0 || scoreFactors.length > 0;
+                const isExpanded = expandedKey === rowKey;
                 return (
-                  <tr key={`${t.broker}-${t.ticker}-${t.closed_at ?? t.created_at}-${i}`} className="border-b border-border/50 last:border-0">
+                  <Fragment key={rowKey}>
+                  <tr
+                    onClick={hasDetails ? () => setExpandedKey(isExpanded ? null : rowKey) : undefined}
+                    className={`border-b border-border/50 last:border-0 ${hasDetails ? "cursor-pointer hover:bg-bg-hover" : ""}`}
+                  >
                     <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
-                    <td className="py-2 font-medium truncate">{t.ticker}</td>
+                    <td className="py-2 font-medium truncate">
+                      <span className="flex items-center gap-1">
+                        {hasDetails && (
+                          isExpanded
+                            ? <ChevronDown size={13} className="text-text-muted shrink-0" />
+                            : <ChevronRight size={13} className="text-text-muted shrink-0" />
+                        )}
+                        {t.ticker}
+                      </span>
+                    </td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMoney(t.entry_price, t.currency)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
                       {kurs != null ? fmtMoney(kurs, t.currency) : "–"}
@@ -227,6 +271,34 @@ function TradeHistorySection() {
                     <td className="py-2 hidden md:table-cell">{brokerBadgeSmall(t.broker)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
                   </tr>
+                  {isExpanded && hasDetails && (
+                    <tr className="border-b border-border/50 last:border-0 bg-bg-hover/40">
+                      <td colSpan={9} className="px-2 py-3">
+                        <div className="space-y-2 text-xs max-w-2xl">
+                          {t.llm_summary && <p className="text-text-primary leading-relaxed">{t.llm_summary}</p>}
+                          {t.llm_risks.length > 0 && (
+                            <ul className="list-disc list-inside text-text-muted space-y-0.5">
+                              {t.llm_risks.map((risk, idx) => <li key={idx}>{risk}</li>)}
+                            </ul>
+                          )}
+                          {t.llm_sentiment != null && (
+                            <div className="text-text-muted">LLM-Sentiment: <span className="font-figures text-text-primary">{t.llm_sentiment}/10</span></div>
+                          )}
+                          {scoreFactors.length > 0 && (
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 font-figures text-text-muted pt-1 border-t border-border">
+                              {scoreFactors.map(([key, v]) => (
+                                <span key={key}>
+                                  {SCORE_FACTOR_LABELS[key] ?? key}: <span className="text-text-primary">{v.score}/{v.max}</span>
+                                  {v.value != null && <span className="text-text-disabled"> ({v.value})</span>}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -262,10 +334,31 @@ function BenchmarkBar({ label, pct, color, maxAbs }: { label: string; pct: numbe
 
 export default function Performance() {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["key"]>("1m");
+  // Globaler Broker-Filter (ersetzt den vormals lokalen Filter in der
+  // Handelshistorie) – wirkt auf Portfolio-Wert-Chart, Handelshistorie-
+  // Tabelle UND deren Zusammenfassungs-Zeile.
+  const [brokerFilter, setBrokerFilter] = useState<(typeof BROKER_FILTERS)[number]["key"]>("alle");
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["performance"],
     queryFn: () => api.get<PerformanceData>("/api/performance").then((r) => r.data),
+  });
+
+  // Saxo-Portfolio-Historie (seit Kurzem verfügbar, siehe
+  // trading_api_saxo.get_performance) – bewusst nicht Teil des Loading-Gates,
+  // die Saxo-Ansicht des Charts zeigt bei Fehler/leer einfach den
+  // Leer-Zustand statt die ganze Seite zu blockieren.
+  const { data: saxoPerf } = useQuery({
+    queryKey: ["saxo-performance"],
+    queryFn: () => api.get<SaxoPerformance>("/api/saxo/performance").then((r) => r.data),
+  });
+
+  // Gleicher Query-Key wie in TradeHistorySection – react-query dedupt das
+  // automatisch, hier nur für den USD/EUR-Kurs der "Alle"-Chart-Kombination
+  // benötigt (siehe fxSubtext-Logik in Uebersicht.tsx).
+  const { data: saxoOverview } = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
   });
 
   const { data: benchmark } = useQuery({
@@ -278,17 +371,39 @@ export default function Performance() {
     queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
   });
 
+  const usdToEur = saxoOverview?.fx_rates_to_eur?.USD ?? null;
+
+  // Chart-Währung folgt dem Broker-Filter: Alpaca=USD (unverändert), Saxo=EUR
+  // (nativ, keine Umrechnung nötig), Alle=EUR-Näherung (siehe unten).
+  const chartCurrency = brokerFilter === "saxo" ? "EUR" : brokerFilter === "alle" ? "EUR" : "USD";
+
   const chartData = useMemo(() => {
     if (!data) return [];
     const periodDef = PERIODS.find((p) => p.key === period);
-    const snapshots = periodDef?.days
-      ? data.snapshots.slice(-periodDef.days)
-      : data.snapshots;
-    return snapshots.map((s) => ({
-      date: new Date(s.log_date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }),
-      wert: s.portfolio_value,
-    }));
-  }, [data, period]);
+    const slice = <T,>(arr: T[]) => (periodDef?.days ? arr.slice(-periodDef.days) : arr);
+
+    if (brokerFilter === "alpaca") {
+      return slice(data.snapshots).map((s) => ({ date: formatDatum(s.log_date), wert: s.portfolio_value }));
+    }
+    if (brokerFilter === "saxo") {
+      return slice(saxoPerf?.snapshots ?? []).map((s) => ({ date: formatDatum(s.log_date), wert: s.portfolio_value_eur }));
+    }
+    // "Alle": kombinierter Tageswert über Datums-Union. Solange Saxo für ein
+    // Datum noch keinen Snapshot hat (Account existierte damals schlicht
+    // noch nicht), trägt es dort korrekterweise 0 zum Total bei – das ist
+    // keine Näherung, sondern der tatsächliche historische Gesamtwert.
+    // Näherung ist NUR die Umrechnung: mangels historischer FX-Kurse wird
+    // der heutige USD/EUR-Kurs rückwirkend auf alle Alpaca-Tage angewendet
+    // (identisches Prinzip wie die "≈"-Kacheln in Uebersicht.tsx).
+    if (!usdToEur) {
+      return slice(data.snapshots).map((s) => ({ date: formatDatum(s.log_date), wert: s.portfolio_value }));
+    }
+    const byDate = new Map<string, number>();
+    for (const s of data.snapshots) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value * usdToEur);
+    for (const s of saxoPerf?.snapshots ?? []) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value_eur);
+    const merged = Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return slice(merged).map(([log_date, wert]) => ({ date: formatDatum(log_date), wert }));
+  }, [data, saxoPerf, usdToEur, period, brokerFilter]);
 
   if (isLoading) {
     return (
@@ -348,8 +463,30 @@ export default function Performance() {
         />
       </div>
 
+      {/* Globaler Broker-Filter (Aufgabe "Globaler Broker-Filter") – wirkt auf
+          Portfolio-Wert-Chart, Handelshistorie-Tabelle und deren
+          Zusammenfassungs-Zeile darunter. */}
+      <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-3 flex items-center justify-between flex-wrap gap-2">
+        <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
+          Broker
+        </div>
+        <div className="flex gap-1">
+          {BROKER_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setBrokerFilter(f.key)}
+              className={`text-xs px-2.5 py-1 rounded-btn transition-colors ${
+                brokerFilter === f.key ? "bg-gold text-bg-app font-medium" : "text-text-muted hover:text-text-primary"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
           <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted">
             Portfolio-Wert
           </div>
@@ -367,8 +504,15 @@ export default function Performance() {
             ))}
           </div>
         </div>
+        {brokerFilter === "alle" && (
+          <div className="text-[0.65rem] text-text-disabled mb-3">
+            ≈ EUR, heutiger USD/EUR-Kurs rückwirkend auf Alpaca-Werte angewendet
+          </div>
+        )}
         {chartData.length === 0 ? (
-          <p className="text-text-muted text-sm py-8 text-center">Noch keine Performance-Daten.</p>
+          <p className="text-text-muted text-sm py-8 text-center">
+            {brokerFilter === "saxo" ? "Noch keine Saxo-Historie (Snapshot-Tracking läuft erst seit Kurzem)." : "Noch keine Performance-Daten."}
+          </p>
         ) : (
           <div className="h-48 md:h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -378,13 +522,13 @@ export default function Performance() {
                 <YAxis
                   stroke="var(--color-text-muted)"
                   fontSize={11}
-                  domain={["auto", "auto"]}
-                  tickFormatter={(v) => `$${v}`}
+                  domain={[0, "auto"]}
+                  tickFormatter={(v) => `${chartCurrency === "EUR" ? "€" : "$"}${v}`}
                 />
                 <Tooltip
                   contentStyle={{ background: "var(--color-bg-card)", border: "1px solid var(--color-border)", borderRadius: 3 }}
                   labelStyle={{ color: "var(--color-text-muted)" }}
-                  formatter={(value) => [fmtUsd(Number(value)), "Portfolio"]}
+                  formatter={(value) => [fmtMoney(Number(value), chartCurrency), "Portfolio"]}
                 />
                 <Line type="monotone" dataKey="wert" stroke="var(--color-gold)" strokeWidth={2} dot={false} />
               </LineChart>
@@ -393,7 +537,7 @@ export default function Performance() {
         )}
       </div>
 
-      <TradeHistorySection />
+      <TradeHistorySection brokerFilter={brokerFilter} />
 
       <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-4">

@@ -99,8 +99,19 @@ export default function MarketStatus() {
     return <div className="px-2 text-xs text-text-muted">Marktzeiten werden geladen…</div>;
   }
 
+  // Aktuelle Uhrzeit wird nur EINMAL oben zentral angezeigt (ET + CEST) statt
+  // redundant pro Markt-Zeile – beide Zeilen zeigten vorher denselben
+  // Zeitpunkt nur aus unterschiedlicher Perspektive.
+  const usParts = getZonedParts(now, MARKETS[0].timeZone);
+  const euParts = getZonedParts(now, MARKETS[1].timeZone);
+  const usLabel = zoneAbbrev(MARKETS[0].timeZone, usParts.offsetMinutes, MARKETS[0].fixedZoneLabel);
+  const euLabel = zoneAbbrev(MARKETS[1].timeZone, euParts.offsetMinutes, MARKETS[1].fixedZoneLabel);
+
   return (
     <div className="px-2 space-y-3 text-xs">
+      <div className="text-text-disabled font-figures pb-1 border-b border-border">
+        Jetzt: {hhmm(usParts.hour, usParts.minute)} {usLabel} · {hhmm(euParts.hour, euParts.minute)} {euLabel}
+      </div>
       {MARKETS.map((market) => {
         const other = MARKETS.find((m) => m.key !== market.key)!;
         const home = getZonedParts(now, market.timeZone);
@@ -128,9 +139,6 @@ export default function MarketStatus() {
             <div className="text-text-muted font-figures mt-0.5">
               {minutesToHhmm(market.openMinutes)}–{minutesToHhmm(market.closeMinutes)} {homeLabel}
               {" "}({minutesToHhmm(otherOpenMinutes)}–{minutesToHhmm(otherCloseMinutes)} {otherLabel})
-            </div>
-            <div className="text-text-disabled font-figures mt-0.5">
-              Aktuell: {hhmm(home.hour, home.minute)} {homeLabel} / {hhmm(otherParts.hour, otherParts.minute)} {otherLabel}
             </div>
             {!open && (
               <div className="text-text-disabled text-[0.65rem] mt-0.5">
