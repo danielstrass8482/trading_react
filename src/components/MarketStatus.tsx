@@ -63,6 +63,20 @@ function hhmm(hour: number, minute: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function minutesToHhmm(totalMinutes: number): string {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440;
+  return hhmm(Math.floor(normalized / 60), normalized % 60);
+}
+
+// Rechnet einen in der HEIMAT-Zone fixen Handelszeiten-Zeitpunkt (z.B. Open/
+// Close-Minuten) in die entsprechende Uhrzeit der ANDEREN Zone um, anhand der
+// für "jetzt" tatsächlich geltenden Offset-Differenz (siehe getZonedParts) –
+// damit die Anzeige "09:30–16:00 ET (15:30–22:00 CEST)" auch bei künftigen
+// abweichenden DST-Umstellterminen zwischen US und EU korrekt bleibt.
+function convertMinutesToOtherZone(minutes: number, homeOffset: number, otherOffset: number): number {
+  return minutes + (otherOffset - homeOffset);
+}
+
 function isMarketOpen(date: Date, market: MarketDef): boolean {
   const { hour, minute, weekday } = getZonedParts(date, market.timeZone);
   if (weekday === "Sat" || weekday === "Sun") return false;
@@ -95,6 +109,14 @@ export default function MarketStatus() {
         const homeLabel = zoneAbbrev(market.timeZone, home.offsetMinutes, market.fixedZoneLabel);
         const otherLabel = zoneAbbrev(other.timeZone, otherParts.offsetMinutes, other.fixedZoneLabel);
 
+        // Feste Handelszeiten (Open/Close) zusätzlich zum aktuellen Live-
+        // Status anzeigen, in der Heimat-Zone UND umgerechnet in die jeweils
+        // andere Zone - macht explizit, WANN gehandelt wird, statt nur den
+        // Live-Snapshot zu zeigen (der z.B. kurz vor Open leicht als "falsch"
+        // missverstanden werden kann).
+        const otherOpenMinutes = convertMinutesToOtherZone(market.openMinutes, home.offsetMinutes, otherParts.offsetMinutes);
+        const otherCloseMinutes = convertMinutesToOtherZone(market.closeMinutes, home.offsetMinutes, otherParts.offsetMinutes);
+
         return (
           <div key={market.key}>
             <div className="flex items-center justify-between gap-2">
@@ -104,7 +126,11 @@ export default function MarketStatus() {
               </span>
             </div>
             <div className="text-text-muted font-figures mt-0.5">
-              {hhmm(home.hour, home.minute)} {homeLabel} / {hhmm(otherParts.hour, otherParts.minute)} {otherLabel}
+              {minutesToHhmm(market.openMinutes)}–{minutesToHhmm(market.closeMinutes)} {homeLabel}
+              {" "}({minutesToHhmm(otherOpenMinutes)}–{minutesToHhmm(otherCloseMinutes)} {otherLabel})
+            </div>
+            <div className="text-text-disabled font-figures mt-0.5">
+              Aktuell: {hhmm(home.hour, home.minute)} {homeLabel} / {hhmm(otherParts.hour, otherParts.minute)} {otherLabel}
             </div>
             {!open && (
               <div className="text-text-disabled text-[0.65rem] mt-0.5">
@@ -114,6 +140,9 @@ export default function MarketStatus() {
           </div>
         );
       })}
+      <div className="text-text-disabled text-[0.65rem] pt-1 border-t border-border">
+        Zeigt nur, ob die Börse gerade handelt – unabhängig davon, ob/wann der Bot neue Trades platziert (Entry-Slots).
+      </div>
     </div>
   );
 }

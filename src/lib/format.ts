@@ -20,6 +20,15 @@ const CURRENCY_SYMBOLS: Record<string, string> = { USD: "$", EUR: "€", GBP: "�
 
 export function fmtMoney(value: number | null | undefined, currency: string, digits = 2): string {
   if (value === null || value === undefined) return "–";
+  // EUR folgt der deutschen Konvention (Symbol hinten, Komma als Dezimal-
+  // trennzeichen: "162,90 €") statt des sonst hier verwendeten Dollar-Stils
+  // (Symbol vorne). USD/GBP bleiben bewusst im bisherigen Format (Alpaca
+  // handelt ausschließlich in USD, siehe Modul-Kommentar oben).
+  if (currency === "EUR") {
+    return new Intl.NumberFormat("de-DE", {
+      style: "currency", currency: "EUR", minimumFractionDigits: digits, maximumFractionDigits: digits,
+    }).format(value);
+  }
   const symbol = CURRENCY_SYMBOLS[currency] ?? currency + " ";
   return symbol + value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
