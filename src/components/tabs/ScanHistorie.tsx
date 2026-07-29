@@ -6,7 +6,7 @@ import {
   ChevronDown, ChevronRight, CheckCircle, XCircle,
   AlertTriangle, TrendingUp, TrendingDown, Minus,
 } from "lucide-react";
-import { api, ScanDay, ScanLogEntry, ScanLogStat } from "@/lib/api";
+import { api, ScanDay, ScanLogEntry, ScanLogStat, SaxoScanDay, mergeScanDays } from "@/lib/api";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
@@ -88,6 +88,13 @@ function formatTag(datum: string): string {
   return new Date(`${datum}T00:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// Alpaca-Slots sind ET-Uhrzeiten ("09:45"), Saxo-Slots Börsen-Codes ("FSE") –
+// das " ET"-Suffix ergibt nur bei Ersteren Sinn (siehe mergeScanDays in api.ts).
+function slotLabel(slot: string | null | undefined): string {
+  const s = slot ?? "?";
+  return /^\d{1,2}:\d{2}$/.test(s) ? `${s} ET` : s;
+}
+
 const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
   {
     key: "ticker", label: "Ticker", align: "center", width: "w-[30%] md:w-28",
@@ -123,7 +130,7 @@ function ScanSlotBlock({ day, slot, open, onToggle }: {
         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-bg-hover transition-colors text-left"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span className="font-figures font-medium">{slot.slot ?? "?"} ET</span>
+        <span className="font-figures font-medium">{slotLabel(slot.slot)}</span>
         <span className="text-text-muted text-xs">
           <span className="md:hidden">
             {slot.total} · {slot.above_threshold}≥{MIN_SIGNAL_SCORE} · {slot.trades}T · Ø{slot.avg_score.toFixed(0)}
@@ -175,22 +182,42 @@ export default function ScanHistorie() {
   const [tickerFilter, setTickerFilter] = useState("");
   const [initialized, setInitialized] = useState(false);
 
-  const { data: days, isLoading, isError, refetch } = useQuery({
-    queryKey: ["scan-log-grouped"],
+  const { data: alpacaDays, isLoading: alpacaLoading, isError, refetch } = useQuery({
+    queryKey: ["scan-log-grouped", "alpaca"],
     queryFn: () => api.get<ScanDay[]>("/api/scan-log", { params: { limit: 2000 } }).then((r) => r.data),
   });
+
+  // Saxo bewusst nicht Teil des Error-Gates (analog Performance.tsx
+  // TradeHistorySection) – fällt die Saxo-API aus, zeigt die Historie
+  // einfach nur Alpaca-Scans statt komplett zu brechen.
+  const { data: saxoDays, isLoading: saxoLoading } = useQuery({
+    queryKey: ["scan-log-grouped", "saxo"],
+    queryFn: () => api.get<SaxoScanDay[]>("/api/saxo/scan-log", { params: { limit: 2000 } }).then((r) => r.data),
+  });
+
+  const isLoading = alpacaLoading || saxoLoading;
+  const days = alpacaDays ? mergeScanDays(alpacaDays, saxoDays ?? []) : undefined;
 
   const { data: filterStats } = useQuery({
     queryKey: ["scan-log-stats"],
     queryFn: () => api.get<ScanLogStat[]>("/api/scan-log/stats").then((r) => r.data),
   });
 
-  const { data: tickerDays } = useQuery({
-    queryKey: ["scan-log-ticker", tickerFilter],
+  const { data: tickerDaysAlpaca } = useQuery({
+    queryKey: ["scan-log-ticker", "alpaca", tickerFilter],
     queryFn: () =>
       api.get<ScanDay[]>("/api/scan-log", { params: { limit: 500, ticker: tickerFilter.toUpperCase() } }).then((r) => r.data),
     enabled: tickerFilter.trim().length > 0,
   });
+
+  const { data: tickerDaysSaxo } = useQuery({
+    queryKey: ["scan-log-ticker", "saxo", tickerFilter],
+    queryFn: () =>
+      api.get<SaxoScanDay[]>("/api/saxo/scan-log", { params: { limit: 500, ticker: tickerFilter.toUpperCase() } }).then((r) => r.data),
+    enabled: tickerFilter.trim().length > 0,
+  });
+
+  const tickerDays = tickerDaysAlpaca ? mergeScanDays(tickerDaysAlpaca, tickerDaysSaxo ?? []) : undefined;
 
   // Neuesten Tag + dessen ersten Slot beim ersten Laden automatisch aufklappen.
   useEffect(() => {
@@ -225,7 +252,15 @@ export default function ScanHistorie() {
   }
 
   const tickerRows = tickerFilter.trim() && tickerDays
-    ? tickerDays.flatMap((d) => d.slots.flatMap((s) => s.tickers.map((t) => ({ ...t, _slot: `${formatTag(d.date)} ${s.slot ?? ""} ET` }))))
+    ? tickerDays.flatMap((d) => d.slots.flatMap((s) => s.tickers.map((t) => ({
+        ...t,
+        // Alpaca- und Saxo-scan_log-Tabellen vergeben ids unabhängig
+        // voneinander (können kollidieren) – eigener React-Key nötig, da
+        // diese flache Liste (anders als die Pro-Slot-Tabellen oben) beide
+        // Broker gemischt rendert.
+        _key: `${t.broker}-${t.id}`,
+        _slot: `${formatTag(d.date)} ${slotLabel(s.slot)}`,
+      }))))
     : [];
 
   const tickerColumns: Column<(typeof tickerRows)[number]>[] = [
@@ -249,7 +284,7 @@ export default function ScanHistorie() {
 
       {tickerFilter.trim() ? (
         <DataTable
-          columns={tickerColumns} rows={tickerRows} keyField="id"
+          columns={tickerColumns} rows={tickerRows} keyField="_key"
           emptyLabel={`Keine Scans für ${tickerFilter.toUpperCase()} gefunden.`}
         />
       ) : days.length === 0 ? (

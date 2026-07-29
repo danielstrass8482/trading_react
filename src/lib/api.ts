@@ -169,6 +169,65 @@ export type ScanDay = {
   slots: ScanSlot[];
 };
 
+// Rohform von trading_api_saxo.py GET /api/scan-log – bewusst separater Typ
+// statt ScanLogEntry: "exchange" statt "slot_et" (der Saxo-Bot hat einen
+// Entry-Zyklus pro Börse statt ET-Zeitslots, siehe SaxoScanSlot unten), kein
+// market_regime (Saxo berechnet den nicht). "mode" fehlt bewusst (Saxo kennt
+// nur LIVE, siehe trading_api_saxo.get_scan_log).
+export type SaxoScanLogEntry = {
+  id: number;
+  scan_date: string;
+  exchange: string | null;
+  scan_time: string;
+  ticker: string;
+  score: number;
+  approved: boolean;
+  current_price: number | null;
+  currency: string | null;
+  rsi_score: number | null;
+  sma_score: number | null;
+  volume_score: number | null;
+  pe_score: number | null;
+  de_score: number | null;
+  rev_score: number | null;
+  ko_reason: string | null;
+  guardrail_reason: string | null;
+  trade_executed: boolean;
+  broker: "saxo";
+};
+
+export type SaxoScanSlot = {
+  slot: string; // = Börsen-Code (FSE/PAR/AMS/LSE_SETS), siehe trading_api_saxo.get_scan_log
+  tickers: SaxoScanLogEntry[];
+  total: number;
+  above_threshold: number;
+  trades: number;
+  avg_score: number;
+};
+
+export type SaxoScanDay = {
+  date: string;
+  slots: SaxoScanSlot[];
+};
+
+// Merged Alpaca-ScanDay[] + Saxo-ScanDay[] zu einer gemeinsamen Liste für
+// ScanHistorie.tsx – pro Datum werden die Slot-Arrays beider Broker einfach
+// aneinandergehängt (Alpaca-Slots sind ET-Uhrzeiten, Saxo-Slots Börsen-Codes,
+// die Labels überschneiden sich nie). Tage, die nur bei einem Broker
+// existieren, bleiben erhalten (z.B. Alpaca hat heute noch nicht gescannt).
+export function mergeScanDays(alpacaDays: ScanDay[], saxoDays: SaxoScanDay[]): ScanDay[] {
+  const byDate = new Map<string, ScanSlot[]>();
+  for (const day of alpacaDays) byDate.set(day.date, [...day.slots]);
+  for (const day of saxoDays) {
+    const existing = byDate.get(day.date);
+    const saxoSlots = day.slots as unknown as ScanSlot[];
+    byDate.set(day.date, existing ? [...existing, ...saxoSlots] : [...saxoSlots]);
+  }
+  return Array.from(byDate.entries())
+    .map(([date, slots]) => ({ date, slots }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export type ScanLogStat = { grund: string; anzahl: number };
 
 export type BotConfigEntry = { key: string; value: string; beschreibung: string | null };
