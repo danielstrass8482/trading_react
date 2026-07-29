@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianG
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry,
-  SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, fromAlpacaTrade, fromSaxoTrade,
+  SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, ScoreBreakdown, fromAlpacaTrade, fromSaxoTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
@@ -23,6 +23,19 @@ const SCORE_FACTOR_LABELS: Record<string, string> = {
   debt_equity: "Verschuldung (D/E)",
   revenue_growth: "Umsatzwachstum",
 };
+
+// "value" ist bei den meisten Faktoren ein Skalar, bei "sma_trend" aber ein
+// {sma50, sma200}-Objekt (siehe rule_engine.calculate_score) - das lässt sich
+// nicht direkt als React-Kind rendern, daher hier explizit formatiert.
+function formatScoreValue(value: ScoreBreakdown[string]["value"]): string | null {
+  if (value == null) return null;
+  if (typeof value === "object") {
+    const { sma50, sma200 } = value;
+    if (sma50 == null && sma200 == null) return null;
+    return `SMA50 ${sma50 ?? "–"} / SMA200 ${sma200 ?? "–"}`;
+  }
+  return String(value);
+}
 
 const PERIODS = [
   { key: "1w", label: "1W", days: 7 },
@@ -286,12 +299,15 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
                           )}
                           {scoreFactors.length > 0 && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1 font-figures text-text-muted pt-1 border-t border-border">
-                              {scoreFactors.map(([key, v]) => (
-                                <span key={key}>
-                                  {SCORE_FACTOR_LABELS[key] ?? key}: <span className="text-text-primary">{v.score}/{v.max}</span>
-                                  {v.value != null && <span className="text-text-disabled"> ({v.value})</span>}
-                                </span>
-                              ))}
+                              {scoreFactors.map(([key, v]) => {
+                                const formattedValue = formatScoreValue(v.value);
+                                return (
+                                  <span key={key}>
+                                    {SCORE_FACTOR_LABELS[key] ?? key}: <span className="text-text-primary">{v.score}/{v.max}</span>
+                                    {formattedValue != null && <span className="text-text-disabled"> ({formattedValue})</span>}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </div>

@@ -135,7 +135,13 @@ export type SaxoPerformance = {
 
 // Struktur von trades.score_breakdown / saxo_trades.score_breakdown (JSON,
 // siehe rule_engine.calculate_score) – ein Eintrag pro Kriterium.
-export type ScoreBreakdown = Record<string, { score: number; max: number; value: number | string | null }>;
+// "value" ist meist ein Skalar, außer bei "sma_trend": dort liefert
+// rule_engine.calculate_score ein {sma50, sma200}-Objekt statt eines
+// einzelnen Werts (siehe rule_engine.py Zeile ~357).
+export type ScoreBreakdown = Record<
+  string,
+  { score: number; max: number; value: number | string | { sma50: number | null; sma200: number | null } | null }
+>;
 
 export type TradeStats = {
   total_trades: number | null;
