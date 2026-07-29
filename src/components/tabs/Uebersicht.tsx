@@ -103,18 +103,20 @@ export default function Uebersicht() {
   // erreichbar war (siehe trading_api.get_overview).
   const unrealizedPnlUsdOnly = data.unrealized_pnl ?? data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
 
-  // Saxo liefert nur den Gesamt-Kontowert (portfolio_value_eur) direkt vom
-  // Broker, keinen separaten Cash/Positionswert wie Alpaca (cash/
-  // long_market_value) – "Gebunden in Positionen" wird deshalb hier als
-  // aktueller Marktwert (Einsatz + unrealisiertes P&L, in EUR umgerechnet)
-  // aus den einzelnen offenen Positionen abgeleitet, "Verfügbares Kapital"
-  // als Rest (Gesamt − Gebunden). Gleiche fx_rates_to_eur-Umrechnung wie
-  // bisher schon für die kombinierte Unrealisiert-Kachel genutzt.
+  // "Verfügbares Kapital" kommt jetzt direkt von Saxo (cash_available_eur,
+  // CashAvailableForTrading aus port/v1/balances) statt aus einer im
+  // Frontend abgeleiteten Restrechnung (Gesamt minus Positionswert) – letztere
+  // driftete über Zeit auseinander, sobald DB-Werte (entry_price/
+  // capital_used_eur) nicht exakt dem echten Saxo-Fill entsprachen (siehe
+  // PHIA.AS-Sanity-Check 2026-07-29, ~0,90 EUR Abweichung). "Gebunden in
+  // Positionen" bleibt als aktueller Marktwert (Einsatz + unrealisiertes P&L,
+  // in EUR umgerechnet) aus den einzelnen offenen Positionen abgeleitet, da
+  // Saxo dafür keinen direkten Einzelwert liefert.
   const saxoUnrealizedEur = saxo
     ? saxoPositions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0)
     : null;
   const saxoBoundEur = saxo ? saxoPositions.reduce((sum, p) => sum + p.capital_used, 0) + (saxoUnrealizedEur ?? 0) : null;
-  const saxoAvailableEur = saxo && saxoBoundEur !== null ? saxo.portfolio_value_eur - saxoBoundEur : null;
+  const saxoAvailableEur = saxo?.cash_available_eur ?? null;
 
   // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
   // NIE als ein einziger, primärer Wert dargestellt (siehe Gesamt-Zeile

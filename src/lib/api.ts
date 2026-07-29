@@ -95,6 +95,12 @@ export type SaxoOpenTrade = {
 
 export type SaxoOverview = {
   portfolio_value_eur: number;
+  // Direkt von Saxo (CashAvailableForTrading aus port/v1/balances) - NICHT
+  // aus portfolio_value_eur minus Positionswert im Frontend abgeleitet, das
+  // driftet ueber Zeit auseinander sobald DB-Werte (entry_price/
+  // capital_used_eur) nicht exakt dem echten Saxo-Fill entsprechen (siehe
+  // PHIA.AS-Sanity-Check 2026-07-29).
+  cash_available_eur: number;
   realized_pnl_eur: number;
   daily_pnl_eur: number;
   open_trades: SaxoOpenTrade[];
