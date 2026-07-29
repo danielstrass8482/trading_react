@@ -81,7 +81,6 @@ export default function Uebersicht() {
   }
 
   const saxo = saxoQuery.data;
-  const vixOk = data.vix > 0 && data.vix < 20;
 
   // Sektor-Chart bleibt bewusst Alpaca-only: SECTOR_MAP kennt keine
   // europäischen Ticker, und Saxo-Kapital (EUR/GBP) ungewandelt zu Alpacas
@@ -97,95 +96,162 @@ export default function Uebersicht() {
     ...data.open_trades.map(fromAlpacaOpenTrade),
     ...(saxo?.open_trades ?? []).map(fromSaxoOpenTrade),
   ];
+  const saxoPositions = positions.filter((p) => p.broker === "saxo");
 
-  // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
-  // NIE als ein einziger, primärer Wert dargestellt (siehe KPI-Zeile unten:
-  // Alpaca/Saxo bleiben eigene Karten, "Gesamt" ist explizit mit "≈"
-  // markiert und zeigt den verwendeten Kurs).
-  const usdToEur = saxo?.fx_rates_to_eur?.USD ?? null;
-  const combinedValueEur = saxo && usdToEur ? data.portfolio_value * usdToEur + saxo.portfolio_value_eur : null;
-  const combinedRealizedEur = saxo && usdToEur ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur : null;
-  const combinedUnrealizedEur =
-    saxo && usdToEur
-      ? positions.reduce((sum, p) => {
-          const rate = p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1;
-          return sum + p.unrealized_pnl * rate;
-        }, 0)
-      : null;
   // Broker-Wahrheit (data.unrealized_pnl, direkt von Alpaca summiert) statt
   // der eigenen yfinance-Näherung – Fallback nur falls Alpaca gerade nicht
   // erreichbar war (siehe trading_api.get_overview).
   const unrealizedPnlUsdOnly = data.unrealized_pnl ?? data.open_trades.reduce((sum, t) => sum + t.unrealized_pnl, 0);
 
+  // Saxo liefert nur den Gesamt-Kontowert (portfolio_value_eur) direkt vom
+  // Broker, keinen separaten Cash/Positionswert wie Alpaca (cash/
+  // long_market_value) – "Gebunden in Positionen" wird deshalb hier als
+  // aktueller Marktwert (Einsatz + unrealisiertes P&L, in EUR umgerechnet)
+  // aus den einzelnen offenen Positionen abgeleitet, "Verfügbares Kapital"
+  // als Rest (Gesamt − Gebunden). Gleiche fx_rates_to_eur-Umrechnung wie
+  // bisher schon für die kombinierte Unrealisiert-Kachel genutzt.
+  const saxoUnrealizedEur = saxo
+    ? saxoPositions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0)
+    : null;
+  const saxoBoundEur = saxo ? saxoPositions.reduce((sum, p) => sum + p.capital_used, 0) + (saxoUnrealizedEur ?? 0) : null;
+  const saxoAvailableEur = saxo && saxoBoundEur !== null ? saxo.portfolio_value_eur - saxoBoundEur : null;
+
+  // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
+  // NIE als ein einziger, primärer Wert dargestellt (siehe Gesamt-Zeile
+  // unten: jede Geldbetrag-Kachel ist explizit mit "≈" markiert und zeigt
+  // den verwendeten Kurs im Subtext).
+  const usdToEur = saxo?.fx_rates_to_eur?.USD ?? null;
+  const combinedAvailableEur =
+    saxo && usdToEur && data.cash !== null && saxoAvailableEur !== null ? data.cash * usdToEur + saxoAvailableEur : null;
+  const combinedBoundEur =
+    saxo && usdToEur && data.long_market_value !== null && saxoBoundEur !== null
+      ? data.long_market_value * usdToEur + saxoBoundEur
+      : null;
+  const combinedRealizedEur = saxo && usdToEur ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur : null;
+  const combinedUnrealizedEur =
+    saxo && usdToEur
+      ? positions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0)
+      : null;
+  const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
+  const totalMaxOpenPositions = data.max_open_positions + (saxo?.max_open_positions ?? 0);
+
+  const tileGrid = "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4";
+  const rowHeading = "text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-3";
+
   return (
     <div className="space-y-6">
-      {/* "Verfügbares Kapital" (Cash) und "Gebunden in Positionen" ersetzen
-          die bisherige einzelne "Alpaca-Konto"-Karte (Cash+Marktwert
-          kombiniert, Alpaca equity) und stehen bewusst an erster Stelle
-          (siehe Modul-Auftrag "Cashflow/Positionswert trennen") – die
-          Kombination suggerierte mehr frei verfügbares Kapital für neue
-          Trades als tatsächlich da war. "Kontowert gesamt" (Cash+Positionen)
-          bleibt als sekundäre Kennzahl im Subtext der zweiten Karte.
-          Realisiert/Unrealisiert bleiben unverändert eigene Karten weiter
-          unten (bereits klar getrennt) – hier nicht dupliziert. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-2 md:gap-4">
-        <KPICard
-          label="Verfügbares Kapital"
-          value={data.cash !== null ? fmtUsd(data.cash, 2) : "–"}
-          color="gold"
-          subtext="Cash, für neue Trades frei"
-        />
-        <KPICard
-          label="Gebunden in Positionen"
-          value={data.long_market_value !== null ? fmtUsd(data.long_market_value, 2) : "–"}
-          color="neutral"
-          subtext={`Kontowert gesamt: ${fmtUsd(data.portfolio_value, 2)}`}
-        />
-        <KPICard
-          label="Saxo-Konto"
-          value={saxo ? fmtMoney(saxo.portfolio_value_eur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
-          color="neutral"
-          subtext="EUR, eigenes Budget"
-        />
-        <KPICard
-          label="Gesamt ≈"
-          value={combinedValueEur !== null ? fmtMoney(combinedValueEur, "EUR", 0) : "…"}
-          color="gold"
-          subtext={usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten"}
-        />
-        <KPICard
-          label="Realisiert ≈"
-          value={combinedRealizedEur !== null ? fmtMoneySigned(combinedRealizedEur, "EUR", 0) : fmtUsdSigned(data.realized_pnl, 0)}
-          color={(combinedRealizedEur ?? data.realized_pnl) >= 0 ? "gain" : "loss"}
-        />
-        <KPICard
-          label="Unrealisiert ≈"
-          value={combinedUnrealizedEur !== null ? fmtMoneySigned(combinedUnrealizedEur, "EUR", 0) : fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
-          color={(combinedUnrealizedEur ?? unrealizedPnlUsdOnly) >= 0 ? "gain" : "loss"}
-          subtext="nicht realisiert"
-        />
-        <KPICard
-          label="VIX"
-          value={data.vix > 0 ? data.vix.toFixed(1) : "–"}
-          color={data.vix === 0 ? "neutral" : vixOk ? "gain" : "loss"}
-          subtext={data.vix > 0 ? (vixOk ? "Handel aktiv" : "Erhöhte Vorsicht") : undefined}
-        />
-        <KPICard
-          label="Offene Positionen"
-          value={`${positions.length}/${data.max_open_positions + (saxo?.max_open_positions ?? 0)}`}
-          color="gold"
-          subtext={
-            <span className="flex items-center gap-1.5 flex-wrap">
-              <span>{data.open_trades.length} Alpaca · {saxo?.open_trades.length ?? 0} Saxo</span>
-              <span>·</span>
-              {regimeSubtext(data.market_regime)}
-            </span>
-          }
-        />
+      {/* Drei Kachel-Reihen (Alpaca / Saxo / Gesamt) mit jeweils denselben
+          fünf Kennzahlen (Kapital/Gebunden/Realisiert/Unrealisiert/Offene
+          Positionen) – siehe Modul-Auftrag "Drei-Zeilen-Layout". Gesamt ist
+          durchgängig mit "≈" markiert (Näherung über zwei Währungsräume),
+          Offene Positionen dort als reine Summe ohne "≈" (echte Zahl). */}
+      <div>
+        <div className={rowHeading}>Alpaca</div>
+        <div className={tileGrid}>
+          <KPICard
+            label="Verfügbares Kapital"
+            value={data.cash !== null ? fmtUsd(data.cash, 2) : "–"}
+            color="gold"
+            subtext="Cash, für neue Trades frei"
+          />
+          <KPICard
+            label="Gebunden in Positionen"
+            value={data.long_market_value !== null ? fmtUsd(data.long_market_value, 2) : "–"}
+            color="neutral"
+          />
+          <KPICard
+            label="Realisiert"
+            value={fmtUsdSigned(data.realized_pnl, 0)}
+            color={data.realized_pnl >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Unrealisiert"
+            value={fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
+            color={unrealizedPnlUsdOnly >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Offene Positionen"
+            value={`${data.open_trades.length}/${data.max_open_positions}`}
+            color="gold"
+            subtext={regimeSubtext(data.market_regime)}
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className={rowHeading}>Saxo</div>
+        <div className={tileGrid}>
+          <KPICard
+            label="Verfügbares Kapital"
+            value={saxoAvailableEur !== null ? fmtMoney(saxoAvailableEur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
+            color="gold"
+            subtext="EUR, für neue Trades frei"
+          />
+          <KPICard
+            label="Gebunden in Positionen"
+            value={saxoBoundEur !== null ? fmtMoney(saxoBoundEur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
+            color="neutral"
+          />
+          <KPICard
+            label="Realisiert"
+            value={saxo ? fmtMoneySigned(saxo.realized_pnl_eur, "EUR", 0) : saxoQuery.isError ? "n/a" : "…"}
+            color={saxo && saxo.realized_pnl_eur >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Unrealisiert"
+            value={saxoUnrealizedEur !== null ? fmtMoneySigned(saxoUnrealizedEur, "EUR", 0) : saxoQuery.isError ? "n/a" : "…"}
+            color={saxoUnrealizedEur !== null && saxoUnrealizedEur >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Offene Positionen"
+            value={saxo ? `${saxo.open_trades.length}/${saxo.max_open_positions}` : saxoQuery.isError ? "n/a" : "…"}
+            color="gold"
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className={rowHeading}>Gesamt</div>
+        <div className={tileGrid}>
+          <KPICard
+            label="Verfügbares Kapital ≈"
+            value={combinedAvailableEur !== null ? fmtMoney(combinedAvailableEur, "EUR", 0) : "…"}
+            color="gold"
+            subtext={fxSubtext}
+          />
+          <KPICard
+            label="Gebunden in Positionen ≈"
+            value={combinedBoundEur !== null ? fmtMoney(combinedBoundEur, "EUR", 0) : "…"}
+            color="neutral"
+            subtext={fxSubtext}
+          />
+          <KPICard
+            label="Realisiert ≈"
+            value={combinedRealizedEur !== null ? fmtMoneySigned(combinedRealizedEur, "EUR", 0) : fmtUsdSigned(data.realized_pnl, 0)}
+            color={(combinedRealizedEur ?? data.realized_pnl) >= 0 ? "gain" : "loss"}
+            subtext={fxSubtext}
+          />
+          <KPICard
+            label="Unrealisiert ≈"
+            value={combinedUnrealizedEur !== null ? fmtMoneySigned(combinedUnrealizedEur, "EUR", 0) : fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
+            color={(combinedUnrealizedEur ?? unrealizedPnlUsdOnly) >= 0 ? "gain" : "loss"}
+            subtext={fxSubtext}
+          />
+          <KPICard
+            label="Offene Positionen"
+            value={`${positions.length}/${totalMaxOpenPositions}`}
+            color="gold"
+            subtext={
+              <span className="flex items-center gap-1.5 flex-wrap">
+                <span>{data.open_trades.length} Alpaca · {saxo?.open_trades.length ?? 0} Saxo</span>
+              </span>
+            }
+          />
+        </div>
       </div>
 
       {saxoQuery.isError && (
-        <p className="text-xs text-loss">Saxo-Daten aktuell nicht verfügbar – Ansicht zeigt nur Alpaca.</p>
+        <p className="text-xs text-loss">Saxo-Daten aktuell nicht verfügbar – Zeilen &bdquo;Saxo&ldquo;/&bdquo;Gesamt&ldquo; zeigen n/a.</p>
       )}
 
       {totalCapital > 0 && (
