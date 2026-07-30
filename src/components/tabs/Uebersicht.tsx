@@ -25,6 +25,19 @@ function brokerBadge(broker: string | null | undefined) {
   );
 }
 
+// Time-Exit-Countdown-Label (nur Alpaca, siehe CombinedOpenPosition/
+// trading_api.get_overview – time_exit_days_remaining ist bei Saxo-Positionen
+// immer null, Saxo kennt kein Time-Exit-Feature). "Überfällig" statt einer
+// negativen Zahl für den (regulär nicht erwarteten) Fall, dass der Bot eine
+// Position trotz erreichtem Limit noch nicht geschlossen hat.
+function timeExitLabel(t: CombinedOpenPosition): string | null {
+  if (t.time_exit_days_remaining === null) return null;
+  const days = t.time_exit_days_remaining;
+  if (days < 0) return "Time-Exit überfällig";
+  const suffix = t.trailing_sl_active ? " (Trailing aktiv)" : "";
+  return `Time-Exit in ${days} Handelstag${days === 1 ? "" : "en"}${suffix}`;
+}
+
 function regimeSubtext(regime: string) {
   const entry = REGIME_LABEL[regime];
   if (!entry) return regime;
@@ -320,6 +333,11 @@ export default function Uebersicht() {
                     <div className="text-xs text-text-muted mt-1.5">
                       Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
                     </div>
+                    {timeExitLabel(t) && (
+                      <div className={`text-xs mt-1 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
+                        {timeExitLabel(t)}
+                      </div>
+                    )}
                   </div>
 
                   {/* Mobile: großes Card-Format */}
@@ -358,6 +376,11 @@ export default function Uebersicht() {
                     <div className="text-[10px] text-text-muted mb-2">
                       Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück
                     </div>
+                    {timeExitLabel(t) && (
+                      <div className={`text-[10px] mb-2 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
+                        {timeExitLabel(t)}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2 pt-2 border-t border-border">
                       <span className="text-[10px] text-text-muted shrink-0">Score</span>

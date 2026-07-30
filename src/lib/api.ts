@@ -50,6 +50,12 @@ export type OpenTrade = {
   current_price: number;
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
+  // Handelstage bis zum automatischen Time-Exit (siehe broker.monitor_open_positions):
+  // MAX_HOLDING_DAYS ohne aktiven Trailing-SL, sonst die harte Obergrenze
+  // MAX_HOLDING_DAYS * MAX_HOLDING_DAYS_TRAILING_MULTIPLIER. Kann rechnerisch
+  // <= 0 sein (Exit steht unmittelbar bevor / überfällig), siehe Uebersicht.tsx.
+  // Nur Alpaca – Saxo kennt kein Time-Exit-Feature.
+  time_exit_days_remaining: number;
 };
 
 export type Overview = {
@@ -305,6 +311,10 @@ export type TradeHistoryEntry = {
   llm_sentiment: number | null;
   llm_risks: string[];
   score_breakdown: ScoreBreakdown;
+  // yfinance-Sektor zum Entry-Zeitpunkt (siehe rule_engine.SignalResult.sector/
+  // broker.place_trade) – null bei Inverse ETFs und bei Trades vor Einführung
+  // dieser Spalte, soweit kein fair_value_cache-Eintrag zum Nachfüllen existierte.
+  sector: string | null;
 };
 
 // Rohform von trading_api_saxo.py GET /api/trades/history – bewusst separater
@@ -336,6 +346,8 @@ export type SaxoTradeEntry = {
   llm_sentiment: number | null;
   llm_risks: string[];
   score_breakdown: ScoreBreakdown;
+  // yfinance-Sektor zum Entry-Zeitpunkt, siehe TradeHistoryEntry.sector.
+  sector: string | null;
 };
 
 // Gemeinsame Anzeige-Form für Performance.tsx, die Alpaca- (USD) und
@@ -365,6 +377,7 @@ export type CombinedTradeEntry = {
   llm_sentiment: number | null;
   llm_risks: string[];
   score_breakdown: ScoreBreakdown;
+  sector: string | null;
 };
 
 export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
@@ -379,6 +392,7 @@ export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
     // liefert diese Keys schlicht nicht mit.
     llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
     llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
+    sector: t.sector ?? null,
   };
 }
 
@@ -392,6 +406,7 @@ export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
     created_at: t.created_at, closed_at: t.closed_at,
     llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
     llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
+    sector: t.sector ?? null,
   };
 }
 
@@ -415,6 +430,9 @@ export type CombinedOpenPosition = {
   trailing_sl_active: boolean;
   trailing_sl_price: number | null;
   mode: TradingMode;
+  // Nur bei Alpaca-Positionen gesetzt (siehe OpenTrade) – Saxo kennt kein
+  // Time-Exit-Feature, siehe Uebersicht.tsx.
+  time_exit_days_remaining: number | null;
 };
 
 export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
@@ -425,6 +443,7 @@ export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
     capital_used: t.capital_used,
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: t.mode,
+    time_exit_days_remaining: t.time_exit_days_remaining,
   };
 }
 
@@ -436,6 +455,7 @@ export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
     capital_used: t.capital_used_eur,
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
+    time_exit_days_remaining: null,
   };
 }
 

@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
 import {
   api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry,
   SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, ScoreBreakdown, fromAlpacaTrade, fromSaxoTrade,
@@ -90,9 +90,72 @@ const STATUS_FILTERS = [
   { key: "geschlossen", label: "Geschlossen" },
 ] as const;
 
+// Sortier-Spalten der Handelshistorie – "Kurs" und "P&L" folgen bewusst
+// derselben isOpen-Verzweigung wie die Anzeige (offene Positionen: Live-
+// Kurs/unrealisierter P&L statt Exit-Preis/realisierter P&L), damit Sortierung
+// und angezeigter Wert nie auseinanderlaufen. Status ist bewusst NICHT
+// sortierbar (kein Feld in der Spalten-Liste der Aufgabe).
+const SORT_COLUMNS = {
+  date: (t: CombinedTradeEntry) => new Date(t.closed_at ?? t.created_at).getTime(),
+  ticker: (t: CombinedTradeEntry) => t.ticker,
+  sector: (t: CombinedTradeEntry) => t.sector,
+  entry: (t: CombinedTradeEntry) => t.entry_price,
+  price: (t: CombinedTradeEntry) => (t.status === "OPEN" ? t.current_price : t.exit_price),
+  quantity: (t: CombinedTradeEntry) => t.quantity,
+  pnl: (t: CombinedTradeEntry) => (t.status === "OPEN" ? t.unrealized_pnl : t.pnl),
+  broker: (t: CombinedTradeEntry) => t.broker,
+  score: (t: CombinedTradeEntry) => t.rule_score,
+} as const satisfies Record<string, (t: CombinedTradeEntry) => string | number | null>;
+
+type SortKey = keyof typeof SORT_COLUMNS;
+type SortDir = "asc" | "desc";
+
+// Klickbarer Spaltenkopf mit Sortier-Pfeil – zeigt den Pfeil nur an der
+// aktuell aktiven Spalte, sonst ein neutrales (schwach eingeblendetes)
+// Auf/Ab-Icon als Hinweis, dass die Spalte klickbar ist.
+function SortableTh({
+  label, sortKey: key, align = "left", hideOnMobile, activeKey, dir, onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  align?: "left" | "right";
+  hideOnMobile?: boolean;
+  activeKey: SortKey;
+  dir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const isActive = activeKey === key;
+  return (
+    <th
+      onClick={() => onSort(key)}
+      className={`py-2 font-semibold cursor-pointer select-none hover:text-text-primary transition-colors ${align === "right" ? "text-right" : "text-left"} ${hideOnMobile ? "hidden md:table-cell" : ""} ${isActive ? "text-text-primary" : ""}`}
+    >
+      <span className={`inline-flex items-center gap-0.5 ${align === "right" ? "flex-row-reverse" : ""}`}>
+        {label}
+        {isActive ? (
+          dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+        ) : (
+          <ArrowUpDown size={11} className="text-text-disabled" />
+        )}
+      </span>
+    </th>
+  );
+}
+
 function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FILTERS)[number]["key"] }) {
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["key"]>("alle");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
 
   const { data: alpacaHistory = [], isLoading: alpacaLoading } = useQuery({
     queryKey: ["trade-history", "alpaca"],
@@ -134,6 +197,26 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
   const history = statusFilter === "alle"
     ? brokerFiltered
     : brokerFiltered.filter((t) => (statusFilter === "offen" ? t.status === "OPEN" : t.status !== "OPEN"));
+
+  // Sortierung wirkt auf die bereits Broker-/Status-gefilterte Liste – rein
+  // clientseitig, die history ist mit limit=50 pro Broker klein genug.
+  // Nullwerte (z.B. Kurs/P&L bei offenen Positionen ohne current_price)
+  // landen unabhängig von der Richtung immer am Tabellenende statt die
+  // Sortierreihenfolge zu verfälschen.
+  const sortedHistory = useMemo(() => {
+    const getValue = SORT_COLUMNS[sortKey];
+    const arr = [...history];
+    arr.sort((a, b) => {
+      const va = getValue(a);
+      const vb = getValue(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      const cmp = typeof va === "string" ? va.localeCompare(vb as string) : va - (vb as number);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [history, sortKey, sortDir]);
 
   // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl ist
   // für OPEN-Trades unverändert NULL, siehe trading_api(_saxo).py) – das ist
@@ -202,31 +285,33 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <table className="w-full table-fixed text-xs md:text-sm">
             <colgroup>
-              <col className="w-12 md:w-[10%]" />
-              <col className="w-16 md:w-[10%]" />
-              <col className="hidden md:table-column md:w-[12%]" />
-              <col className="hidden md:table-column md:w-[12%]" />
-              <col className="hidden md:table-column md:w-[9%]" />
-              <col className="md:w-[16%]" />
-              <col className="w-20 md:w-[14%]" />
-              <col className="hidden md:table-column md:w-[9%]" />
+              <col className="w-20 md:w-[9%]" />
+              <col className="w-16 md:w-[9%]" />
+              <col className="hidden md:table-column md:w-[10%]" />
+              <col className="hidden md:table-column md:w-[11%]" />
+              <col className="hidden md:table-column md:w-[11%]" />
               <col className="hidden md:table-column md:w-[8%]" />
+              <col className="md:w-[15%]" />
+              <col className="w-20 md:w-[13%]" />
+              <col className="hidden md:table-column md:w-[8%]" />
+              <col className="hidden md:table-column md:w-[6%]" />
             </colgroup>
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
-                <th className="text-left py-2 font-semibold">Datum</th>
-                <th className="text-left py-2 font-semibold">Ticker</th>
-                <th className="text-right py-2 font-semibold hidden md:table-cell">Entry</th>
-                <th className="text-right py-2 font-semibold hidden md:table-cell">Kurs</th>
-                <th className="text-right py-2 font-semibold hidden md:table-cell">Menge</th>
-                <th className="text-right py-2 font-semibold">P&L</th>
-                <th className="text-left py-2 font-semibold">Status</th>
-                <th className="text-left py-2 font-semibold hidden md:table-cell">Broker</th>
-                <th className="text-right py-2 font-semibold hidden md:table-cell">Score</th>
+                <SortableTh label="Datum" sortKey="date" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Ticker" sortKey="ticker" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Sektor" sortKey="sector" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Entry" sortKey="entry" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Kurs" sortKey="price" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Menge" sortKey="quantity" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="P&L" sortKey="pnl" align="right" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <th className="text-left py-2 pl-2 font-semibold">Status</th>
+                <SortableTh label="Broker" sortKey="broker" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Score" sortKey="score" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               </tr>
             </thead>
             <tbody>
-              {history.map((t, i) => {
+              {sortedHistory.map((t, i) => {
                 const isOpen = t.status === "OPEN";
                 // "Kurs"-Spalte: bei offenen Positionen der Live-Kurs statt des
                 // (noch nicht existierenden) Exit-Preises; "P&L"-Spalte: bei
@@ -255,6 +340,7 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
                         {t.ticker}
                       </span>
                     </td>
+                    <td className="py-2 text-text-muted truncate hidden md:table-cell">{t.sector ?? "–"}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMoney(t.entry_price, t.currency)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
                       {kurs != null ? fmtMoney(kurs, t.currency) : "–"}
@@ -286,7 +372,7 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
                   </tr>
                   {isExpanded && hasDetails && (
                     <tr className="border-b border-border/50 last:border-0 bg-bg-hover/40">
-                      <td colSpan={9} className="px-2 py-3">
+                      <td colSpan={10} className="px-2 py-3">
                         <div className="space-y-2 text-xs max-w-2xl">
                           {t.llm_summary && <p className="text-text-primary leading-relaxed">{t.llm_summary}</p>}
                           {t.llm_risks.length > 0 && (
