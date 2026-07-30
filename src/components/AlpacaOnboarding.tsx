@@ -44,7 +44,15 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
       <div className="space-y-4">
         <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3 flex items-center gap-2">
           <CheckCircle size={16} strokeWidth={1.5} className="shrink-0" />
-          Verbunden! Kontostand: ${result.cash.toLocaleString("de-DE", { maximumFractionDigits: 2 })}
+          Verbindung erfolgreich getestet. Kontostand: ${result.cash.toLocaleString("de-DE", { maximumFractionDigits: 2 })}
+        </div>
+        <div className="text-sm text-loss bg-loss/10 border border-loss/30 rounded-btn px-4 py-3 flex items-start gap-2">
+          <AlertTriangle size={16} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+          <span>
+            <strong>Beta-Hinweis:</strong> Der Bot befindet sich aktuell in der Beta-Phase und handelt
+            noch nicht automatisch auf verbundenen Kundenkonten. Dein Account ist vorbereitet, die
+            automatische Anbindung folgt in einer späteren Version.
+          </span>
         </div>
         <button
           onClick={onConnected}
