@@ -1,10 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle } from "lucide-react";
+import { CheckCircle, Eye, EyeOff } from "lucide-react";
 import { login, register } from "@/lib/auth";
 
 type Tab = "anmelden" | "registrieren";
+
+function PasswordInput({
+  value,
+  onChange,
+  className,
+  ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        className={`${className} pr-10`}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        tabIndex={-1}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-gold"
+      >
+        {visible ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+      </button>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>("anmelden");
@@ -108,8 +139,7 @@ export default function LoginPage() {
             </div>
             <div>
               <label className={labelCls}>Passwort</label>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -160,8 +190,7 @@ export default function LoginPage() {
             </div>
             <div>
               <label className={labelCls}>Passwort (mind. 8 Zeichen)</label>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 minLength={8}
                 value={regPassword}
@@ -171,8 +200,7 @@ export default function LoginPage() {
             </div>
             <div>
               <label className={labelCls}>Passwort wiederholen</label>
-              <input
-                type="password"
+              <PasswordInput
                 required
                 value={regPasswordRepeat}
                 onChange={(e) => setRegPasswordRepeat(e.target.value)}
