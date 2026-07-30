@@ -4,11 +4,11 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info } from "lucide-react";
 import {
-  api, BotConfigEntry, EntrySlot, Overview, LearningProposal, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
+  api, BotConfigEntry, EntrySlot, Overview, SaxoOverview, LearningProposal, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtPct, fmtUsd, gainLossClass } from "@/lib/format";
+import { fmtPct, fmtUsd, fmtMoney, gainLossClass } from "@/lib/format";
 
 type BrokerKey = "alpaca" | "saxo";
 
@@ -147,6 +147,10 @@ function validateCapitalSettings(
   return { valid: true };
 }
 
+function isCapitalKey(key: string): boolean {
+  return key.endsWith("MAX_CAPITAL_TOTAL") || key.endsWith("MAX_CAPITAL_PER_TRADE");
+}
+
 function PresetsSection({ config }: { config: Record<string, string> }) {
   const queryClient = useQueryClient();
   const current = activePreset(config);
@@ -189,9 +193,10 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
 }
 
 function GuardrailCard({
-  botKey, value, config, apiPrefix = "/api", queryKeyPrefix = "alpaca",
+  botKey, value, config, apiPrefix = "/api", queryKeyPrefix = "alpaca", liveCash,
 }: {
   botKey: string; value: string; config: Record<string, string>; apiPrefix?: string; queryKeyPrefix?: string;
+  liveCash?: number | null;
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -200,6 +205,8 @@ function GuardrailCard({
   const spec = GUARDRAIL_LABELS[botKey];
   const label = spec?.label ?? botKey;
   const displayValue = fmtGuardrailValue(botKey, value);
+  const brokerLabel = queryKeyPrefix === "saxo" ? "Saxo" : "Alpaca";
+  const currency = queryKeyPrefix === "saxo" ? "EUR" : "USD";
 
   const mutation = useMutation({
     mutationFn: (rawValue: string) => api.put(`${apiPrefix}/bot-config/${botKey}`, { value: rawValue }),
@@ -212,6 +219,13 @@ function GuardrailCard({
 
   const draftRawValue = parseGuardrailInput(botKey, draft);
   const validation = editing ? validateCapitalSettings(config, botKey, draftRawValue) : { valid: true };
+
+  // Nur für MAX_CAPITAL_TOTAL relevant (AUFGABE 2) – rein informativ, blockiert
+  // NICHT das Speichern (Kunde plant evtl. noch Kapital nachzulegen).
+  const isTotalKey = botKey.endsWith("MAX_CAPITAL_TOTAL");
+  const configuredValue = Number(editing ? draftRawValue : value);
+  const overLiveCash =
+    isTotalKey && liveCash != null && !Number.isNaN(configuredValue) && configuredValue > liveCash;
 
   function startEdit() {
     setDraft(displayValue.replace("%", "").replace(" $", "").trim());
@@ -265,6 +279,20 @@ function GuardrailCard({
         </div>
       ) : (
         <div className="font-figures">{displayValue}</div>
+      )}
+      {liveCash !== undefined && (
+        <div className="text-[0.7rem] text-text-muted mt-1.5 pt-1.5 border-t border-border/50 font-figures">
+          Aktuell verfügbar bei {brokerLabel}: {liveCash == null ? "–" : fmtMoney(liveCash, currency, 2)}
+        </div>
+      )}
+      {overLiveCash && (
+        <div className="text-xs text-loss mt-1 flex items-start gap-1">
+          <AlertTriangle size={13} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+          <span>
+            Dein eingestelltes Limit liegt über dem aktuell verfügbaren Kapital bei {brokerLabel} — der Bot
+            kann dieses Limit erst nutzen, wenn mehr Kapital auf dem Konto liegt.
+          </span>
+        </div>
       )}
       {mutation.isError && <div className="text-xs text-loss mt-1">Speichern fehlgeschlagen</div>}
     </div>
@@ -552,6 +580,23 @@ export default function Einstellungen() {
     queryFn: () => api.get<BotConfigEntry[]>(`${apiPrefix}/bot-config`).then((r) => r.data),
   });
 
+  // Echtes, aktuell verfügbares Broker-Kapital – dieselben Queries/Keys wie
+  // Uebersicht.tsx (["overview","alpaca"]/["overview","saxo"]), damit Cache
+  // geteilt wird und GuardrailCards Save-Invalidation (queryKey ["overview",
+  // queryKeyPrefix]) hier direkt ein Refetch auslöst. `enabled` verhindert
+  // den jeweils inaktiven Broker-Call.
+  const { data: overview } = useQuery({
+    queryKey: ["overview", "alpaca"],
+    queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
+    enabled: broker === "alpaca",
+  });
+  const { data: saxoOverview } = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
+    enabled: broker === "saxo",
+  });
+  const liveCash = broker === "saxo" ? saxoOverview?.cash_available_eur ?? null : overview?.cash ?? null;
+
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -579,7 +624,15 @@ export default function Einstellungen() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {guardrailKeys.filter((k) => k in config).map((key) => (
-                    <GuardrailCard key={key} botKey={key} value={config[key]} config={config} apiPrefix={apiPrefix} queryKeyPrefix={broker} />
+                    <GuardrailCard
+                      key={key}
+                      botKey={key}
+                      value={config[key]}
+                      config={config}
+                      apiPrefix={apiPrefix}
+                      queryKeyPrefix={broker}
+                      liveCash={isCapitalKey(key) ? liveCash : undefined}
+                    />
                   ))}
                 </div>
               </div>
