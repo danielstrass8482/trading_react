@@ -24,61 +24,39 @@ function statusCell(row: ScanLogEntry) {
   if (row.ko_reason) {
     const isFairValueKo = row.ko_reason.includes("Fair Value");
     const colorCls = isFairValueKo ? "text-orange-400" : "text-loss";
-    const badgeCls = isFairValueKo ? "bg-orange-400/15 text-orange-400" : "bg-loss/15 text-loss";
     return (
-      <>
-        <span
-          className={`md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn ${badgeCls}`}
-          title={`KO: ${row.ko_reason}`}
-        >
-          KO
-        </span>
-        <span className={`hidden md:flex items-center gap-1.5 ${colorCls}`}>
-          <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
-        </span>
-      </>
+      <span className={`flex items-center gap-1.5 ${colorCls}`}>
+        <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
+      </span>
     );
   }
   if (row.trade_executed) {
     return (
-      <>
-        <span className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gain/15 text-gain">
-          Trade
-        </span>
-        <span className="hidden md:flex text-gain items-center gap-1.5">
-          <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
-        </span>
-      </>
+      <span className="flex text-gain items-center gap-1.5">
+        <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
+      </span>
     );
   }
   if (row.approved) {
     return (
-      <>
-        <span
-          className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gold/15 text-gold"
-          title={row.guardrail_reason ? `Guardrail: ${row.guardrail_reason}` : "Guardrail"}
-        >
-          Guardrail
-        </span>
-        <span className="hidden md:flex text-gold items-center gap-1.5">
-          <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
-        </span>
-      </>
+      <span className="flex text-gold items-center gap-1.5">
+        <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
+      </span>
     );
   }
-  return <span className="text-text-muted">– Score zu niedrig</span>;
+  return <span className="text-text-muted">Score zu niedrig</span>;
 }
 
 function brokerBadge(broker: string | null | undefined) {
   const b = (broker ?? "alpaca").toLowerCase();
   return (
-    <span className={`hidden md:inline text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
+    <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
       {b.toUpperCase()}
     </span>
   );
 }
 
-function regimeIcon(regime: string | null) {
+function regimeIcon(regime: string | null | undefined) {
   if (regime === "bullish") return <TrendingUp size={16} strokeWidth={1.5} className="text-gain inline" />;
   if (regime === "bearish") return <TrendingDown size={16} strokeWidth={1.5} className="text-loss inline" />;
   return <Minus size={16} strokeWidth={1.5} className="text-text-muted inline" />;
@@ -95,34 +73,64 @@ function slotLabel(slot: string | null | undefined): string {
   return /^\d{1,2}:\d{2}$/.test(s) ? `${s} ET` : s;
 }
 
-const SCAN_COLUMNS: Column<ScanLogEntry>[] = [
-  {
-    key: "ticker", label: "Ticker", align: "center", width: "w-[30%] md:w-28",
-    render: (r) => (
-      <span className="inline-flex items-center gap-1.5 min-w-0 max-w-full">
-        <span className="block min-w-0 truncate font-semibold">{r.ticker}</span>
-        {brokerBadge(r.broker)}
-      </span>
-    ),
-  },
-  { key: "score", label: "Score", align: "center", width: "w-[20%] md:w-14", render: (r) => <span className="font-figures">{r.score}</span> },
-  { key: "rsi_score", label: "RSI", align: "center", width: "w-12", render: (r) => checkCell(r.rsi_score), hideOnMobile: true },
-  { key: "sma_score", label: "SMA", align: "center", width: "w-12", render: (r) => checkCell(r.sma_score), hideOnMobile: true },
-  { key: "volume_score", label: "Vol", align: "center", width: "w-12", render: (r) => checkCell(r.volume_score), hideOnMobile: true },
-  { key: "pe_score", label: "P/E", align: "center", width: "w-12", render: (r) => checkCell(r.pe_score), hideOnMobile: true },
-  { key: "de_score", label: "D/E", align: "center", width: "w-12", render: (r) => checkCell(r.de_score), hideOnMobile: true },
-  { key: "rev_score", label: "Rev", align: "center", width: "w-12", render: (r) => checkCell(r.rev_score), hideOnMobile: true },
-  {
-    key: "market_regime", label: "Regime", align: "center", width: "w-12",
-    render: (r) => regimeIcon(r.market_regime), hideOnMobile: true,
-  },
-  { key: "status", label: "Status", align: "center", width: "w-[50%] md:w-auto", render: (r) => statusCell(r) },
-];
+// Detail-Panel für einen Ticker: RSI/SMA/Vol/P-E/D-E/Rev/Regime/Score/Status
+// waren früher permanent sichtbare Spalten – jetzt nur noch hier, per Klick
+// auf den Ticker aufklappbar (siehe SCAN_COLUMNS unten).
+function TickerDetail({ row }: { row: ScanLogEntry }) {
+  const factors: [string, number | null][] = [
+    ["RSI", row.rsi_score],
+    ["SMA", row.sma_score],
+    ["Vol", row.volume_score],
+    ["P/E", row.pe_score],
+    ["D/E", row.de_score],
+    ["Rev", row.rev_score],
+  ];
+  return (
+    <div className="py-3 space-y-2.5 text-xs">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <span className="text-text-muted">
+          Score: <span className="font-figures font-semibold text-text-primary">{row.score}</span>
+        </span>
+        {factors.map(([label, value]) => (
+          <span key={label} className="flex items-center gap-1 text-text-muted">
+            {label} {checkCell(value)}
+          </span>
+        ))}
+        {row.market_regime && (
+          <span className="flex items-center gap-1 text-text-muted">
+            Regime {regimeIcon(row.market_regime)}
+          </span>
+        )}
+      </div>
+      <div>{statusCell(row)}</div>
+    </div>
+  );
+}
 
-function ScanSlotBlock({ day, slot, open, onToggle }: {
-  day: string; slot: ScanDay["slots"][number]; open: boolean; onToggle: () => void;
+function ScanSlotBlock({ slot, open, onToggle, expanded, onToggleTicker }: {
+  slot: ScanDay["slots"][number]; open: boolean; onToggle: () => void;
+  expanded: Set<string>; onToggleTicker: (key: string) => void;
 }) {
   const sortedTickers = [...slot.tickers].sort((a, b) => b.score - a.score);
+  const rowKey = (r: ScanLogEntry) => `${r.broker}-${r.id}`;
+
+  const columns: Column<ScanLogEntry>[] = [
+    {
+      key: "ticker", label: "Ticker",
+      render: (r) => {
+        const key = rowKey(r);
+        const isOpen = expanded.has(key);
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            {isOpen ? <ChevronDown size={13} className="text-text-muted shrink-0" /> : <ChevronRight size={13} className="text-text-muted shrink-0" />}
+            <span className="font-semibold">{r.ticker}</span>
+            {brokerBadge(r.broker)}
+          </span>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="border-t border-border/50">
       <button
@@ -132,17 +140,19 @@ function ScanSlotBlock({ day, slot, open, onToggle }: {
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span className="font-figures font-medium">{slotLabel(slot.slot)}</span>
         <span className="text-text-muted text-xs">
-          <span className="md:hidden">
-            {slot.total} · {slot.above_threshold}≥{MIN_SIGNAL_SCORE} · {slot.trades}T · Ø{slot.avg_score.toFixed(0)}
-          </span>
-          <span className="hidden md:inline">
-            [{slot.total} gescannt | {slot.above_threshold} über {MIN_SIGNAL_SCORE} | {slot.trades} Trades | Ø {slot.avg_score.toFixed(0)}]
-          </span>
+          {slot.total} · {slot.above_threshold}≥{MIN_SIGNAL_SCORE} · {slot.trades}T · Ø{slot.avg_score.toFixed(0)}
         </span>
       </button>
       {open && (
         <div className="px-4 pb-3">
-          <DataTable columns={SCAN_COLUMNS} rows={sortedTickers} keyField="id" />
+          <DataTable
+            columns={columns}
+            rows={sortedTickers}
+            keyField="id"
+            onRowClick={(r) => onToggleTicker(rowKey(r))}
+            isRowExpanded={(r) => expanded.has(rowKey(r))}
+            renderExpanded={(r) => <TickerDetail row={r} />}
+          />
         </div>
       )}
     </div>
@@ -179,6 +189,7 @@ function FilterStats({ stats }: { stats: ScanLogStat[] }) {
 export default function ScanHistorie() {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openSlots, setOpenSlots] = useState<Set<string>>(new Set());
+  const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set());
   const [tickerFilter, setTickerFilter] = useState("");
   const [initialized, setInitialized] = useState(false);
 
@@ -246,6 +257,14 @@ export default function ScanHistorie() {
     });
   }
 
+  function toggleTicker(key: string) {
+    setExpandedTickers((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
   if (isLoading) return <TableSkeleton />;
   if (isError || !days) {
     return <ErrorState message="Scan-Historie konnte nicht geladen werden." onRetry={() => refetch()} />;
@@ -264,9 +283,20 @@ export default function ScanHistorie() {
     : [];
 
   const tickerColumns: Column<(typeof tickerRows)[number]>[] = [
-    { key: "_slot", label: "Scan" },
-    { key: "score", label: "Score", align: "right" },
-    { key: "status", label: "Status", render: (r) => statusCell(r) },
+    {
+      key: "ticker", label: "Ticker",
+      render: (r) => {
+        const isOpen = expandedTickers.has(r._key);
+        return (
+          <span className="inline-flex items-center gap-1.5">
+            {isOpen ? <ChevronDown size={13} className="text-text-muted shrink-0" /> : <ChevronRight size={13} className="text-text-muted shrink-0" />}
+            <span className="font-semibold">{r.ticker}</span>
+            {brokerBadge(r.broker)}
+          </span>
+        );
+      },
+    },
+    { key: "_slot", label: "Scan", align: "right", render: (r) => <span className="text-text-muted">{r._slot}</span> },
   ];
 
   return (
@@ -286,6 +316,9 @@ export default function ScanHistorie() {
         <DataTable
           columns={tickerColumns} rows={tickerRows} keyField="_key"
           emptyLabel={`Keine Scans für ${tickerFilter.toUpperCase()} gefunden.`}
+          onRowClick={(r) => toggleTicker(r._key)}
+          isRowExpanded={(r) => expandedTickers.has(r._key)}
+          renderExpanded={(r) => <TickerDetail row={r} />}
         />
       ) : days.length === 0 ? (
         <p className="text-text-muted text-sm">Noch keine Scans vorhanden.</p>
@@ -306,10 +339,11 @@ export default function ScanHistorie() {
               {openDays.has(day.date) && day.slots.map((slot, i) => (
                 <ScanSlotBlock
                   key={`${day.date}-${i}`}
-                  day={day.date}
                   slot={slot}
                   open={openSlots.has(`${day.date}-${i}`)}
                   onToggle={() => toggleSlot(`${day.date}-${i}`)}
+                  expanded={expandedTickers}
+                  onToggleTicker={toggleTicker}
                 />
               ))}
             </div>
