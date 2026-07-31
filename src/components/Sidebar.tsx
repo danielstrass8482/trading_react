@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { api, Overview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
+import { api, Overview, SaxoOverview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
 import { logout } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
@@ -33,7 +33,7 @@ const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> =
   neutral: { icon: Minus, label: "NEUTRAL" },
 };
 
-function BrokerStatus({ overview, cfg }: { overview?: Overview; cfg: Record<string, string> }) {
+function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; saxoOverview?: SaxoOverview; cfg: Record<string, string> }) {
   const activeBroker = cfg.ACTIVE_BROKER ?? "alpaca";
   const drainMode = (cfg.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
   const alpacaOpen = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca").length;
@@ -60,14 +60,19 @@ function BrokerStatus({ overview, cfg }: { overview?: Overview; cfg: Record<stri
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <span className="flex items-center gap-1.5 font-medium text-text-muted">
-              <span className="text-text-disabled">●</span> SAXO
+            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "saxo" ? "text-gold" : "text-text-muted"}`}>
+              <span className={activeBroker === "saxo" ? "text-gold" : "text-text-disabled"}>●</span> SAXO
             </span>
-            <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-text-muted/20 text-text-muted">
-              Demnächst
+            {/* Saxo-Bot kennt bewusst nur LIVE (kein Paper-Modus, siehe
+                SaxoOverview/fromSaxoOpenTrade in api.ts) – die Badge ist daher
+                statisch statt aus einem Feld abgeleitet. */}
+            <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-live/20 text-live">
+              LIVE
             </span>
           </div>
-          <div className="text-text-muted mt-0.5">In Kürze verfügbar</div>
+          <div className="text-text-muted font-figures mt-0.5">
+            Konto: {saxoOverview ? `€${saxoOverview.portfolio_value_eur.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {saxoOverview?.open_trades.length ?? "…"}
+          </div>
         </div>
       </div>
     </div>
@@ -84,6 +89,15 @@ export default function Sidebar({
   const { data: overview } = useQuery({
     queryKey: ["overview"],
     queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+
+  // Bewusst nicht Teil eines gemeinsamen Error-Gates mit dem Alpaca-Overview
+  // (analog Uebersicht.tsx/Performance.tsx) – fällt die Saxo-API aus, zeigt
+  // die Broker-Zeile einfach "…" statt die ganze Sidebar zu brechen.
+  const { data: saxoOverview } = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
     refetchInterval: 60_000,
   });
 
@@ -164,7 +178,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <BrokerStatus overview={overview} cfg={cfg} />
+        <BrokerStatus overview={overview} saxoOverview={saxoOverview} cfg={cfg} />
 
         <button
           onClick={logout}

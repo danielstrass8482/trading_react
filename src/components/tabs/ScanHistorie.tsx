@@ -2,134 +2,73 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronDown, ChevronRight, CheckCircle, XCircle,
-  AlertTriangle, TrendingUp, TrendingDown, Minus,
-} from "lucide-react";
-import { api, ScanDay, ScanLogEntry, ScanLogStat, SaxoScanDay, mergeScanDays } from "@/lib/api";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import { api, ScanDay, ScanLogEntry, ScanLogStat, SaxoScanDay, mergeScanDays, MIN_SIGNAL_SCORE } from "@/lib/api";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-
-const MIN_SIGNAL_SCORE = 65;
-
-function checkCell(value: number | null) {
-  if (value === null || value === undefined) return <span className="text-text-muted">–</span>;
-  return value > 0
-    ? <CheckCircle size={16} strokeWidth={1.5} className="text-gain inline" />
-    : <XCircle size={16} strokeWidth={1.5} className="text-loss inline" />;
-}
-
-function statusCell(row: ScanLogEntry) {
-  if (row.ko_reason) {
-    const isFairValueKo = row.ko_reason.includes("Fair Value");
-    const colorCls = isFairValueKo ? "text-orange-400" : "text-loss";
-    return (
-      <span className={`flex items-center gap-1.5 ${colorCls}`}>
-        <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
-      </span>
-    );
-  }
-  if (row.trade_executed) {
-    return (
-      <span className="flex text-gain items-center gap-1.5">
-        <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
-      </span>
-    );
-  }
-  if (row.approved) {
-    return (
-      <span className="flex text-gold items-center gap-1.5">
-        <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
-      </span>
-    );
-  }
-  return <span className="text-text-muted">Score zu niedrig</span>;
-}
 
 function brokerBadge(broker: string | null | undefined) {
   const b = (broker ?? "alpaca").toLowerCase();
   return (
     <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
-      {b.toUpperCase()}
+      {b === "alpaca" ? "Alpaca" : "Saxo"}
     </span>
   );
-}
-
-function regimeIcon(regime: string | null | undefined) {
-  if (regime === "bullish") return <TrendingUp size={16} strokeWidth={1.5} className="text-gain inline" />;
-  if (regime === "bearish") return <TrendingDown size={16} strokeWidth={1.5} className="text-loss inline" />;
-  return <Minus size={16} strokeWidth={1.5} className="text-text-muted inline" />;
 }
 
 function formatTag(datum: string): string {
   return new Date(`${datum}T00:00:00`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-// Alpaca-Slots sind ET-Uhrzeiten ("09:45"), Saxo-Slots Börsen-Codes ("FSE") –
-// das " ET"-Suffix ergibt nur bei Ersteren Sinn (siehe mergeScanDays in api.ts).
-function slotLabel(slot: string | null | undefined): string {
-  const s = slot ?? "?";
-  return /^\d{1,2}:\d{2}$/.test(s) ? `${s} ET` : s;
+// Einzelner Faktor-Score (RSI/SMA/Vol/KGV/D-E/Rev) – Punktwert statt reinem
+// Bestanden/Nicht-bestanden-Icon, da die Aufgabe explizit "KPI-Werte" verlangt.
+function factorCell(value: number | null | undefined) {
+  if (value === null || value === undefined) return <span className="text-text-muted">–</span>;
+  return <span className={value > 0 ? "text-gain" : "text-loss"}>{value}</span>;
 }
 
-// Detail-Panel für einen Ticker: RSI/SMA/Vol/P-E/D-E/Rev/Regime/Score/Status
-// waren früher permanent sichtbare Spalten – jetzt nur noch hier, per Klick
-// auf den Ticker aufklappbar (siehe SCAN_COLUMNS unten).
-function TickerDetail({ row }: { row: ScanLogEntry }) {
-  const factors: [string, number | null][] = [
-    ["RSI", row.rsi_score],
-    ["SMA", row.sma_score],
-    ["Vol", row.volume_score],
-    ["P/E", row.pe_score],
-    ["D/E", row.de_score],
-    ["Rev", row.rev_score],
-  ];
-  return (
-    <div className="py-3 space-y-2.5 text-xs">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        <span className="text-text-muted">
-          Score: <span className="font-figures font-semibold text-text-primary">{row.score}</span>
-        </span>
-        {factors.map(([label, value]) => (
-          <span key={label} className="flex items-center gap-1 text-text-muted">
-            {label} {checkCell(value)}
-          </span>
-        ))}
-        {row.market_regime && (
-          <span className="flex items-center gap-1 text-text-muted">
-            Regime {regimeIcon(row.market_regime)}
-          </span>
-        )}
-      </div>
-      <div>{statusCell(row)}</div>
-    </div>
-  );
-}
+type SortDir = "asc" | "desc";
 
-function ScanSlotBlock({ slot, open, onToggle, expanded, onToggleTicker }: {
-  slot: ScanDay["slots"][number]; open: boolean; onToggle: () => void;
-  expanded: Set<string>; onToggleTicker: (key: string) => void;
-}) {
-  const sortedTickers = [...slot.tickers].sort((a, b) => b.score - a.score);
-  const rowKey = (r: ScanLogEntry) => `${r.broker}-${r.id}`;
-
-  const columns: Column<ScanLogEntry>[] = [
+// Score-Spalte für die flachen Ticker-Tabellen (Slot- und Ticker-Suche) –
+// einzige sortierbare Spalte laut Aufgabe, Default aufsteigend (kleinster
+// Score zuerst), analog zur sortierbaren Spalten-Logik der Handelshistorie
+// (Performance.tsx SORT_COLUMNS/SortableTh) – hier direkt über DataTable
+// (sortKey/sortDir/onSort), da nur eine Spalte sortierbar sein muss.
+// extraColumns wird vor der Score-Spalte eingefügt (z.B. "Scan"-Zeitpunkt in
+// der Ticker-Suche, die über mehrere Slots/Tage hinweg streut).
+function scanColumns<T extends ScanLogEntry>(extraColumns: Column<T>[] = []): Column<T>[] {
+  return [
     {
       key: "ticker", label: "Ticker",
-      render: (r) => {
-        const key = rowKey(r);
-        const isOpen = expanded.has(key);
-        return (
-          <span className="inline-flex items-center gap-1.5">
-            {isOpen ? <ChevronDown size={13} className="text-text-muted shrink-0" /> : <ChevronRight size={13} className="text-text-muted shrink-0" />}
-            <span className="font-semibold">{r.ticker}</span>
-            {brokerBadge(r.broker)}
-          </span>
-        );
-      },
+      render: (r) => <span className="font-semibold">{r.ticker}</span>,
+    },
+    { key: "broker", label: "Broker", render: (r) => brokerBadge(r.broker) },
+    { key: "rsi_score", label: "RSI", align: "right", hideOnMobile: true, render: (r) => factorCell(r.rsi_score) },
+    { key: "sma_score", label: "SMA", align: "right", hideOnMobile: true, render: (r) => factorCell(r.sma_score) },
+    { key: "volume_score", label: "Volumen", align: "right", hideOnMobile: true, render: (r) => factorCell(r.volume_score) },
+    { key: "pe_score", label: "KGV", align: "right", hideOnMobile: true, render: (r) => factorCell(r.pe_score) },
+    { key: "de_score", label: "D/E", align: "right", hideOnMobile: true, render: (r) => factorCell(r.de_score) },
+    { key: "rev_score", label: "Umsatzw.", align: "right", hideOnMobile: true, render: (r) => factorCell(r.rev_score) },
+    ...extraColumns,
+    {
+      key: "score", label: "Score", align: "right", sortable: true,
+      render: (r) => <span className="font-figures font-semibold">{r.score}</span>,
     },
   ];
+}
+
+function sortByScore<T extends ScanLogEntry>(rows: T[], dir: SortDir): T[] {
+  const arr = [...rows];
+  arr.sort((a, b) => (dir === "asc" ? a.score - b.score : b.score - a.score));
+  return arr;
+}
+
+function ScanSlotBlock({ slot, open, onToggle, sortDir, onSort }: {
+  slot: ScanDay["slots"][number]; open: boolean; onToggle: () => void;
+  sortDir: SortDir; onSort: () => void;
+}) {
+  const sortedTickers = sortByScore(slot.tickers, sortDir);
 
   return (
     <div className="border-t border-border/50">
@@ -138,7 +77,7 @@ function ScanSlotBlock({ slot, open, onToggle, expanded, onToggleTicker }: {
         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-bg-hover transition-colors text-left"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        <span className="font-figures font-medium">{slotLabel(slot.slot)}</span>
+        <span className="font-figures font-medium">{slot.slot}</span>
         <span className="text-text-muted text-xs">
           {slot.total} · {slot.above_threshold}≥{MIN_SIGNAL_SCORE} · {slot.trades}T · Ø{slot.avg_score.toFixed(0)}
         </span>
@@ -146,12 +85,12 @@ function ScanSlotBlock({ slot, open, onToggle, expanded, onToggleTicker }: {
       {open && (
         <div className="px-4 pb-3">
           <DataTable
-            columns={columns}
+            columns={scanColumns()}
             rows={sortedTickers}
             keyField="id"
-            onRowClick={(r) => onToggleTicker(rowKey(r))}
-            isRowExpanded={(r) => expanded.has(rowKey(r))}
-            renderExpanded={(r) => <TickerDetail row={r} />}
+            sortKey="score"
+            sortDir={sortDir}
+            onSort={onSort}
           />
         </div>
       )}
@@ -189,9 +128,13 @@ function FilterStats({ stats }: { stats: ScanLogStat[] }) {
 export default function ScanHistorie() {
   const [openDays, setOpenDays] = useState<Set<string>>(new Set());
   const [openSlots, setOpenSlots] = useState<Set<string>>(new Set());
-  const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set());
   const [tickerFilter, setTickerFilter] = useState("");
   const [initialized, setInitialized] = useState(false);
+  // Ein gemeinsamer Sortier-Zustand für alle Slot-Tabellen und die
+  // Ticker-Suche – dieselbe Interaktion (Score-Spalte klicken) gilt
+  // einheitlich überall auf dieser Seite statt pro Tabelle einzeln.
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const toggleSort = () => setSortDir((d) => (d === "asc" ? "desc" : "asc"));
 
   const { data: alpacaDays, isLoading: alpacaLoading, isError, refetch } = useQuery({
     queryKey: ["scan-log-grouped", "alpaca"],
@@ -257,20 +200,12 @@ export default function ScanHistorie() {
     });
   }
 
-  function toggleTicker(key: string) {
-    setExpandedTickers((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }
-
   if (isLoading) return <TableSkeleton />;
   if (isError || !days) {
     return <ErrorState message="Scan-Historie konnte nicht geladen werden." onRetry={() => refetch()} />;
   }
 
-  const tickerRows = tickerFilter.trim() && tickerDays
+  const tickerRowsRaw = tickerFilter.trim() && tickerDays
     ? tickerDays.flatMap((d) => d.slots.flatMap((s) => s.tickers.map((t) => ({
         ...t,
         // Alpaca- und Saxo-scan_log-Tabellen vergeben ids unabhängig
@@ -278,26 +213,14 @@ export default function ScanHistorie() {
         // diese flache Liste (anders als die Pro-Slot-Tabellen oben) beide
         // Broker gemischt rendert.
         _key: `${t.broker}-${t.id}`,
-        _slot: `${formatTag(d.date)} ${slotLabel(s.slot)}`,
+        _slot: `${formatTag(d.date)}, ${s.slot}`,
       }))))
     : [];
+  const tickerRows = sortByScore(tickerRowsRaw, sortDir);
 
-  const tickerColumns: Column<(typeof tickerRows)[number]>[] = [
-    {
-      key: "ticker", label: "Ticker",
-      render: (r) => {
-        const isOpen = expandedTickers.has(r._key);
-        return (
-          <span className="inline-flex items-center gap-1.5">
-            {isOpen ? <ChevronDown size={13} className="text-text-muted shrink-0" /> : <ChevronRight size={13} className="text-text-muted shrink-0" />}
-            <span className="font-semibold">{r.ticker}</span>
-            {brokerBadge(r.broker)}
-          </span>
-        );
-      },
-    },
-    { key: "_slot", label: "Scan", align: "right", render: (r) => <span className="text-text-muted">{r._slot}</span> },
-  ];
+  const tickerColumns = scanColumns<(typeof tickerRows)[number]>([
+    { key: "_slot", label: "Scan", align: "right", hideOnMobile: true, render: (r) => <span className="text-text-muted">{r._slot}</span> },
+  ]);
 
   return (
     <div className="space-y-4">
@@ -316,9 +239,7 @@ export default function ScanHistorie() {
         <DataTable
           columns={tickerColumns} rows={tickerRows} keyField="_key"
           emptyLabel={`Keine Scans für ${tickerFilter.toUpperCase()} gefunden.`}
-          onRowClick={(r) => toggleTicker(r._key)}
-          isRowExpanded={(r) => expandedTickers.has(r._key)}
-          renderExpanded={(r) => <TickerDetail row={r} />}
+          sortKey="score" sortDir={sortDir} onSort={toggleSort}
         />
       ) : days.length === 0 ? (
         <p className="text-text-muted text-sm">Noch keine Scans vorhanden.</p>
@@ -342,8 +263,8 @@ export default function ScanHistorie() {
                   slot={slot}
                   open={openSlots.has(`${day.date}-${i}`)}
                   onToggle={() => toggleSlot(`${day.date}-${i}`)}
-                  expanded={expandedTickers}
-                  onToggleTicker={toggleTicker}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
                 />
               ))}
             </div>

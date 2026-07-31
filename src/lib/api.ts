@@ -245,21 +245,97 @@ export type SaxoScanDay = {
   slots: SaxoScanSlot[];
 };
 
-// Merged Alpaca-ScanDay[] + Saxo-ScanDay[] zu einer gemeinsamen Liste für
-// ScanHistorie.tsx – pro Datum werden die Slot-Arrays beider Broker einfach
-// aneinandergehängt (Alpaca-Slots sind ET-Uhrzeiten, Saxo-Slots Börsen-Codes,
-// die Labels überschneiden sich nie). Tage, die nur bei einem Broker
-// existieren, bleiben erhalten (z.B. Alpaca hat heute noch nicht gescannt).
-export function mergeScanDays(alpacaDays: ScanDay[], saxoDays: SaxoScanDay[]): ScanDay[] {
-  const byDate = new Map<string, ScanSlot[]>();
-  for (const day of alpacaDays) byDate.set(day.date, [...day.slots]);
-  for (const day of saxoDays) {
-    const existing = byDate.get(day.date);
-    const saxoSlots = day.slots as unknown as ScanSlot[];
-    byDate.set(day.date, existing ? [...existing, ...saxoSlots] : [...saxoSlots]);
+export const MIN_SIGNAL_SCORE = 65;
+
+// scan_time kommt vom Backend als naiver Timestamp OHNE Zeitzonen-Suffix,
+// repräsentiert aber tatsächlich UTC (siehe ScanLog.scan_time/SaxoScanLog.
+// scan_time in den jeweiligen database.py – beide via datetime.utcnow()
+// befüllt). new Date("...") OHNE "Z" würde das fälschlich als
+// Browser-Lokalzeit interpretieren, daher hier explizit als UTC parsen.
+function parseUtc(scanTime: string): Date {
+  return new Date(/[Zz]|[+-]\d\d:?\d\d$/.test(scanTime) ? scanTime : `${scanTime}Z`);
+}
+
+const BERLIN_OFFSET_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  timeZone: "Europe/Berlin", timeZoneName: "shortOffset",
+});
+
+// CEST vs. CET anhand des tatsächlichen UTC-Offsets von Europe/Berlin zum
+// jeweiligen Zeitpunkt (nicht anhand des heutigen Datums) – korrekt auch für
+// historische Scans aus der jeweils anderen Jahreszeit.
+function isBerlinSummerTime(d: Date): boolean {
+  const part = BERLIN_OFFSET_FORMATTER.formatToParts(d).find((p) => p.type === "timeZoneName")?.value ?? "";
+  return part.includes("+2");
+}
+
+const BERLIN_TIME_FORMATTER = new Intl.DateTimeFormat("de-DE", {
+  timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", hour12: false,
+});
+
+// Ordnet einen Scan-Zeitpunkt einem einheitlichen CEST/CET-Slot-Label zu,
+// gerundet auf 5 Minuten. Das genügt, um Cron-Jitter (Sekunden bis wenige
+// Minuten Verzögerung) zu absorbieren, ohne echte Slots zu verschmelzen: alle
+// konfigurierten Entry-Slots (Alpaca wie Saxo, siehe ENTRY_SLOT_OFFSETS_MIN)
+// liegen real >= 90 Minuten auseinander. Das ersetzt die früher pro Broker
+// unterschiedlichen Slot-Labels (Alpaca "09:45" ET, Saxo "LSE_SETS 13:30")
+// durch EIN gemeinsames Label pro tatsächlichem Zeitpunkt – z.B. sind
+// LSE_SETS/FSE/PAR/AMS zum selben Entry-Zyklus dieselbe reale CEST-Uhrzeit
+// (Xetra/Euronext öffnen 09:00 lokal = 09:00 CEST, LSE öffnet 08:00 London =
+// 09:00 CEST, UK/EU stellen synchron auf Sommerzeit um).
+function cestSlotLabel(scanTime: string): string {
+  const d = parseUtc(scanTime);
+  const parts = BERLIN_TIME_FORMATTER.formatToParts(d);
+  const hour = Number(parts.find((p) => p.type === "hour")!.value);
+  const minute = Number(parts.find((p) => p.type === "minute")!.value);
+  const rounded = (Math.round((hour * 60 + minute) / 5) * 5 + 1440) % 1440;
+  const hh = String(Math.floor(rounded / 60)).padStart(2, "0");
+  const mm = String(rounded % 60).padStart(2, "0");
+  return `${hh}:${mm} ${isBerlinSummerTime(d) ? "CEST" : "CET"}`;
+}
+
+function bucketByRealSlot(tickers: ScanLogEntry[]): ScanSlot[] {
+  const buckets = new Map<string, ScanLogEntry[]>();
+  for (const t of tickers) {
+    const key = cestSlotLabel(t.scan_time);
+    const arr = buckets.get(key);
+    if (arr) arr.push(t); else buckets.set(key, [t]);
   }
+  return Array.from(buckets.entries())
+    .map(([slot, ts]) => {
+      const scores = ts.map((t) => t.score).filter((s): s is number => !!s && s > 0);
+      return {
+        slot,
+        tickers: ts,
+        total: ts.length,
+        above_threshold: ts.filter((t) => t.score >= MIN_SIGNAL_SCORE).length,
+        trades: ts.filter((t) => t.trade_executed).length,
+        avg_score: scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10 : 0,
+      };
+    })
+    // Neuestes Slot-Label zuerst (absteigend), analog zur bisherigen Reihenfolge
+    // (Backend lieferte Zeilen scan_time DESC, erster Slot = jüngster Scan).
+    .sort((a, b) => b.slot.localeCompare(a.slot));
+}
+
+// Merged Alpaca-ScanDay[] + Saxo-ScanDay[] zu einer gemeinsamen Liste für
+// ScanHistorie.tsx. Pro Datum werden ALLE Ticker beider Broker (unabhängig
+// von ihrem ursprünglichen, pro-Broker unterschiedlichen Slot-Label)
+// zusammengeworfen und anhand des tatsächlichen Scan-Zeitpunkts neu in
+// CEST/CET-Slots gebündelt (siehe bucketByRealSlot) – vorher erschienen z.B.
+// LSE_SETS/FSE/PAR/AMS als 4 separate Slots für denselben realen Zeitpunkt.
+// Tage, die nur bei einem Broker existieren, bleiben erhalten (z.B. Alpaca
+// hat heute noch nicht gescannt).
+export function mergeScanDays(alpacaDays: ScanDay[], saxoDays: SaxoScanDay[]): ScanDay[] {
+  const byDate = new Map<string, ScanLogEntry[]>();
+  function addTickers(date: string, tickers: ScanLogEntry[]) {
+    const existing = byDate.get(date);
+    byDate.set(date, existing ? [...existing, ...tickers] : [...tickers]);
+  }
+  for (const day of alpacaDays) addTickers(day.date, day.slots.flatMap((s) => s.tickers));
+  for (const day of saxoDays) addTickers(day.date, day.slots.flatMap((s) => s.tickers) as unknown as ScanLogEntry[]);
+
   return Array.from(byDate.entries())
-    .map(([date, slots]) => ({ date, slots }))
+    .map(([date, tickers]) => ({ date, slots: bucketByRealSlot(tickers) }))
     .sort((a, b) => b.date.localeCompare(a.date));
 }
 

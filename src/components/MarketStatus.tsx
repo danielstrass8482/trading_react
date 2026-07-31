@@ -109,7 +109,7 @@ export default function MarketStatus() {
 
   return (
     <div className="px-2 space-y-3 text-xs">
-      <div className="text-text-disabled font-figures pb-1 border-b border-border">
+      <div className="text-text-primary font-figures pb-1 border-b border-border">
         Jetzt: {hhmm(usParts.hour, usParts.minute)} {usLabel} · {hhmm(euParts.hour, euParts.minute)} {euLabel}
       </div>
       {MARKETS.map((market) => {

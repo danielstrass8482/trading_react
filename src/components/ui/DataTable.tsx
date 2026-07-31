@@ -1,4 +1,5 @@
 import { Fragment } from "react";
+import { ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 
 export type Column<T> = {
   key: string;
@@ -8,6 +9,8 @@ export type Column<T> = {
   hideOnMobile?: boolean;
   /** Tailwind width class(es) for the <col>, e.g. "w-16" or "w-16 md:w-24". Omit to let the column fill remaining space. */
   width?: string;
+  /** Macht den Spaltenkopf klickbar (siehe sortKey/sortDir/onSort auf DataTable). */
+  sortable?: boolean;
 };
 
 export default function DataTable<T extends { [key: string]: unknown }>({
@@ -18,6 +21,9 @@ export default function DataTable<T extends { [key: string]: unknown }>({
   onRowClick,
   renderExpanded,
   isRowExpanded,
+  sortKey,
+  sortDir,
+  onSort,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -26,6 +32,10 @@ export default function DataTable<T extends { [key: string]: unknown }>({
   onRowClick?: (row: T) => void;
   renderExpanded?: (row: T) => React.ReactNode;
   isRowExpanded?: (row: T) => boolean;
+  /** Aktuell aktive Sortier-Spalte (key eines sortable-Columns). */
+  sortKey?: string;
+  sortDir?: "asc" | "desc";
+  onSort?: (key: string) => void;
 }) {
   if (!rows.length) {
     return <p className="text-text-muted text-sm py-4">{emptyLabel}</p>;
@@ -47,14 +57,30 @@ export default function DataTable<T extends { [key: string]: unknown }>({
         </colgroup>
         <thead>
           <tr className="border-b-2 border-border-accent">
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                className={`px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-text-muted ${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""}`}
-              >
-                {col.label}
-              </th>
-            ))}
+            {columns.map((col) => {
+              const isSortable = col.sortable && onSort;
+              const isActive = isSortable && sortKey === col.key;
+              return (
+                <th
+                  key={col.key}
+                  onClick={isSortable ? () => onSort(col.key) : undefined}
+                  className={`px-3 py-2 text-[0.72rem] font-semibold uppercase tracking-wider text-text-muted ${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""} ${isSortable ? "cursor-pointer select-none hover:text-text-primary transition-colors" : ""} ${isActive ? "text-text-primary" : ""}`}
+                >
+                  {isSortable ? (
+                    <span className={`inline-flex items-center gap-0.5 ${col.align === "right" ? "flex-row-reverse" : ""}`}>
+                      {col.label}
+                      {isActive ? (
+                        sortDir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+                      ) : (
+                        <ArrowUpDown size={11} className="text-text-disabled" />
+                      )}
+                    </span>
+                  ) : (
+                    col.label
+                  )}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
