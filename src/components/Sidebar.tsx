@@ -33,8 +33,33 @@ const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> =
   neutral: { icon: Minus, label: "NEUTRAL" },
 };
 
+// Gemeinsames Badge fuer den Trading-Modus (LIVE/PAPER) – dieselbe
+// Farb-Zuordnung wie das "Bot-Status"-Badge weiter oben in der Sidebar
+// (bg-live/text-live fuer LIVE, bg-paper/text-paper fuer PAPER), damit
+// Alpaca und Saxo optisch dasselbe Muster nutzen statt vorher Alpaca als
+// unauffaelligen Klartext neben dem Namen und Saxo als eigenstaendige Pille.
+function ModeBadge({ mode }: { mode: string }) {
+  const isLive = mode === "LIVE";
+  return (
+    <span className={`text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn ${isLive ? "bg-live/20 text-live" : "bg-paper/20 text-paper"}`}>
+      {mode}
+    </span>
+  );
+}
+
+// Punkt + Broker-Name in identischer Darstellung fuer beide Broker (vorher:
+// Farbe haengte am ACTIVE_BROKER-Config-Wert, wodurch der jeweils NICHT
+// aktive Broker gedimmt/grau wirkte – obwohl beide inzwischen parallel live
+// handeln, siehe [[trading-bot-deployment]]).
+function BrokerLabel({ name }: { name: string }) {
+  return (
+    <span className="flex items-center gap-1.5 font-medium text-gold">
+      <span className="text-gold">●</span> {name}
+    </span>
+  );
+}
+
 function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; saxoOverview?: SaxoOverview; cfg: Record<string, string> }) {
-  const activeBroker = cfg.ACTIVE_BROKER ?? "alpaca";
   const drainMode = (cfg.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
   const alpacaOpen = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca").length;
 
@@ -44,15 +69,15 @@ function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; sa
       <div className="px-2 space-y-2.5 text-xs">
         <div>
           <div className="flex items-center justify-between">
-            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "alpaca" ? "text-gold" : "text-text-muted"}`}>
-              <span className={activeBroker === "alpaca" ? "text-gold" : "text-text-disabled"}>●</span> ALPACA
-              {overview?.trading_mode && <span className="text-text-muted font-normal">{overview.trading_mode}</span>}
-            </span>
-            {activeBroker === "alpaca" && drainMode && (
-              <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-orange-500/20 text-orange-400">
-                Drain
-              </span>
-            )}
+            <BrokerLabel name="ALPACA" />
+            <div className="flex items-center gap-1">
+              {drainMode && (
+                <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-orange-500/20 text-orange-400">
+                  Drain
+                </span>
+              )}
+              {overview?.trading_mode && <ModeBadge mode={overview.trading_mode} />}
+            </div>
           </div>
           <div className="text-text-muted font-figures mt-0.5">
             Konto: {overview ? `$${overview.portfolio_value.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {alpacaOpen}
@@ -60,15 +85,10 @@ function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; sa
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <span className={`flex items-center gap-1.5 font-medium ${activeBroker === "saxo" ? "text-gold" : "text-text-muted"}`}>
-              <span className={activeBroker === "saxo" ? "text-gold" : "text-text-disabled"}>●</span> SAXO
-            </span>
+            <BrokerLabel name="SAXO" />
             {/* Saxo-Bot kennt bewusst nur LIVE (kein Paper-Modus, siehe
-                SaxoOverview/fromSaxoOpenTrade in api.ts) – die Badge ist daher
-                statisch statt aus einem Feld abgeleitet. */}
-            <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-live/20 text-live">
-              LIVE
-            </span>
+                SaxoOverview/fromSaxoOpenTrade in api.ts). */}
+            <ModeBadge mode="LIVE" />
           </div>
           <div className="text-text-muted font-figures mt-0.5">
             Konto: {saxoOverview ? `€${saxoOverview.portfolio_value_eur.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {saxoOverview?.open_trades.length ?? "…"}
