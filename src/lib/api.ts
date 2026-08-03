@@ -509,6 +509,7 @@ export type CombinedOpenPosition = {
   // Nur bei Alpaca-Positionen gesetzt (siehe OpenTrade) – Saxo kennt kein
   // Time-Exit-Feature, siehe Uebersicht.tsx.
   time_exit_days_remaining: number | null;
+  created_at: string;
 };
 
 export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
@@ -520,6 +521,7 @@ export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: t.mode,
     time_exit_days_remaining: t.time_exit_days_remaining,
+    created_at: t.created_at,
   };
 }
 
@@ -532,6 +534,7 @@ export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
     time_exit_days_remaining: null,
+    created_at: t.created_at,
   };
 }
 

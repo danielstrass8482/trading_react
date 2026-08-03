@@ -38,6 +38,18 @@ function timeExitLabel(t: CombinedOpenPosition): string | null {
   return `Time-Exit in ${days} Handelstag${days === 1 ? "" : "en"}${suffix}`;
 }
 
+// Reine Info-Anzeige der Haltedauer für Saxo-Positionen (kein Countdown/
+// Ablaufdatum wie beim Alpaca Time-Exit oben – Saxo kennt kein Time-Exit-
+// Feature, siehe Modul-Docstring von CombinedOpenPosition).
+function holdingDurationLabel(t: CombinedOpenPosition): string | null {
+  if (t.broker !== "saxo") return null;
+  const entryDate = new Date(t.created_at);
+  const days = Math.floor((Date.now() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+  const dateStr = entryDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const durationStr = days <= 0 ? "heute" : `seit ${days} Tag${days === 1 ? "" : "en"}`;
+  return `Gehalten ${durationStr} (Entry: ${dateStr})`;
+}
+
 function regimeSubtext(regime: string) {
   const entry = REGIME_LABEL[regime];
   if (!entry) return regime;
@@ -338,6 +350,11 @@ export default function Uebersicht() {
                         {timeExitLabel(t)}
                       </div>
                     )}
+                    {holdingDurationLabel(t) && (
+                      <div className="text-xs mt-1 text-text-muted">
+                        {holdingDurationLabel(t)}
+                      </div>
+                    )}
                   </div>
 
                   {/* Mobile: großes Card-Format */}
@@ -379,6 +396,11 @@ export default function Uebersicht() {
                     {timeExitLabel(t) && (
                       <div className={`text-[10px] mb-2 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
                         {timeExitLabel(t)}
+                      </div>
+                    )}
+                    {holdingDurationLabel(t) && (
+                      <div className="text-[10px] mb-2 text-text-muted">
+                        {holdingDurationLabel(t)}
                       </div>
                     )}
 
