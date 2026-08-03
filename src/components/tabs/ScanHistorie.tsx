@@ -31,17 +31,28 @@ function factorCell(value: number | null | undefined) {
 type SortDir = "asc" | "desc";
 
 // Score-Spalte für die flachen Ticker-Tabellen (Slot- und Ticker-Suche) –
-// einzige sortierbare Spalte laut Aufgabe, Default aufsteigend (kleinster
-// Score zuerst), analog zur sortierbaren Spalten-Logik der Handelshistorie
-// (Performance.tsx SORT_COLUMNS/SortableTh) – hier direkt über DataTable
-// (sortKey/sortDir/onSort), da nur eine Spalte sortierbar sein muss.
+// einzige sortierbare Spalte laut Aufgabe, Default ABSTEIGEND (größter Score
+// zuerst) – hier direkt über DataTable (sortKey/sortDir/onSort), da nur eine
+// Spalte sortierbar sein muss.
 // extraColumns wird vor der Score-Spalte eingefügt (z.B. "Scan"-Zeitpunkt in
 // der Ticker-Suche, die über mehrere Slots/Tage hinweg streut).
 function scanColumns<T extends ScanLogEntry>(extraColumns: Column<T>[] = []): Column<T>[] {
   return [
     {
       key: "ticker", label: "Ticker",
-      render: (r) => <span className="font-semibold">{r.ticker}</span>,
+      // KO-Grund als Tooltip (Aufgabe "leere Faktor-Spalten"): ein Ticker,
+      // der schon an einem frühen KO-Gate (Earnings-Risiko/5-Tage-Move/
+      // Sektor-Blacklist, siehe rule_engine.analyze_ticker) scheitert, kommt
+      // nie bis zur eigentlichen 6-Faktoren-Berechnung – rsi_score/sma_score/
+      // etc. sind für diese Zeilen deshalb korrekt/beabsichtigt NULL (score=0),
+      // kein Speicher-/Mapping-Fehler. Ohne sichtbaren Grund sieht das aber
+      // wie ein Bug aus, daher hier der KO-Grund als Tooltip + kleines Icon.
+      render: (r) => (
+        <span className="font-semibold inline-flex items-center gap-1" title={r.ko_reason ?? undefined}>
+          {r.ticker}
+          {r.ko_reason && <span className="text-text-disabled text-[0.65rem]" aria-hidden>ⓘ</span>}
+        </span>
+      ),
     },
     { key: "broker", label: "Broker", render: (r) => brokerBadge(r.broker) },
     { key: "rsi_score", label: "RSI", align: "right", hideOnMobile: true, render: (r) => factorCell(r.rsi_score) },
@@ -133,7 +144,7 @@ export default function ScanHistorie() {
   // Ein gemeinsamer Sortier-Zustand für alle Slot-Tabellen und die
   // Ticker-Suche – dieselbe Interaktion (Score-Spalte klicken) gilt
   // einheitlich überall auf dieser Seite statt pro Tabelle einzeln.
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const toggleSort = () => setSortDir((d) => (d === "asc" ? "desc" : "asc"));
 
   const { data: alpacaDays, isLoading: alpacaLoading, isError, refetch } = useQuery({

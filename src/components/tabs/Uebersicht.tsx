@@ -61,20 +61,6 @@ function regimeSubtext(regime: string) {
   );
 }
 
-// Grobe Sektor-Zuordnung fürs Übersichts-Balkendiagramm – rein für die
-// Anzeige, hat keine Auswirkung auf die Bot-Logik (die kennt keine
-// Sektor-Segmentierung, nur die VOLATILE_WATCHLIST-Unterscheidung).
-const SECTOR_MAP: Record<string, string> = {
-  AAPL: "Tech", MSFT: "Tech", GOOGL: "Tech", AMZN: "Tech", META: "Tech",
-  NVDA: "Tech", AMD: "Tech", INTC: "Tech", QCOM: "Tech", ORCL: "Tech",
-  CRM: "Tech", ADBE: "Tech", NOW: "Tech", SNOW: "Tech", TXN: "Tech", AMAT: "Tech",
-  JPM: "Finanzen", V: "Finanzen", MA: "Finanzen", BAC: "Finanzen", GS: "Finanzen",
-  MS: "Finanzen", BLK: "Finanzen", AXP: "Finanzen", WFC: "Finanzen", C: "Finanzen",
-  UNH: "Gesundheit", ABT: "Gesundheit", MDT: "Gesundheit", SYK: "Gesundheit",
-  KO: "Konsum", PEP: "Konsum", MCD: "Konsum", WMT: "Konsum", COST: "Konsum",
-  SH: "Inverse ETF", PSQ: "Inverse ETF", SDS: "Inverse ETF", SQQQ: "Inverse ETF", SPXS: "Inverse ETF",
-};
-
 export default function Uebersicht() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["overview", "alpaca"],
@@ -107,11 +93,14 @@ export default function Uebersicht() {
 
   const saxo = saxoQuery.data;
 
-  // Sektor-Chart bleibt bewusst Alpaca-only: SECTOR_MAP kennt keine
-  // europäischen Ticker, und Saxo-Kapital (EUR/GBP) ungewandelt zu Alpacas
-  // USD-Beträgen zu addieren würde die Prozentanteile verfälschen.
+  // Sektor-Chart bleibt bewusst Alpaca-only: Saxo-Kapital (EUR/GBP)
+  // ungewandelt zu Alpacas USD-Beträgen zu addieren würde die Prozentanteile
+  // verfälschen. Sektor kommt direkt vom Backend (t.sector, yfinance-Wert
+  // zum Entry-Zeitpunkt, siehe trading_api.get_overview) – dieselbe Quelle
+  // wie in der Handelshistorie, "Sonstige" nur noch als echter Fallback für
+  // Trades ohne ermittelten Sektor (z.B. yfinance ohne "sector"-Feld).
   const sectorTotals = data.open_trades.reduce<Record<string, number>>((acc, t) => {
-    const sector = SECTOR_MAP[t.ticker] ?? "Sonstige";
+    const sector = t.sector ?? "Sonstige";
     acc[sector] = (acc[sector] ?? 0) + t.capital_used;
     return acc;
   }, {});

@@ -5,13 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
 import {
-  api, Performance as PerformanceData, Benchmark, Overview, TradeHistoryEntry,
+  api, Performance as PerformanceData, Benchmark, TradeHistoryEntry,
   SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, ScoreBreakdown, fromAlpacaTrade, fromSaxoTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
-import { fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
+import { fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
 
 // Deutsche Labels für score_breakdown-Keys (siehe rule_engine.calculate_score
 // in trading_bot bzw. trading_bot_saxo – identische Keys auf beiden Seiten).
@@ -90,6 +90,65 @@ const STATUS_FILTERS = [
   { key: "geschlossen", label: "Geschlossen" },
 ] as const;
 
+// Currency-aware Aggregation für Kennzahlen über eine gemischte Trade-Menge
+// (Alpaca=USD, Saxo=EUR/GBP je nach Börse) – EINZIGE Quelle sowohl für die
+// Kennzahlen-Kacheln oben als auch die Zusammenfassungs-Zeile unter der
+// Handelshistorie-Tabelle (Fix: vorher zogen die Kacheln ihre Zahlen separat
+// aus /api/performance.stats, einer reinen Alpaca-SQL-Aggregation im
+// Backend, die weder den Broker-Filter noch Saxo überhaupt kannte). Ist die
+// gefilterte Menge einwährig (z.B. Broker-Filter=Alpaca, oder zufällig nur
+// eine Börse betroffen), wird nativ summiert; bei Mischwährungen (Broker-
+// Filter=Alle) auf eine EUR-Näherung umgerechnet (identisches Prinzip wie
+// die "≈ EUR"-Werte in Uebersicht.tsx).
+type PnlAggregate = {
+  count: number;
+  currency: string | null;
+  nativeTotal: number | null;
+  eurTotal: number | null;
+};
+
+function aggregatePnl(
+  trades: CombinedTradeEntry[],
+  getPnl: (t: CombinedTradeEntry) => number | null,
+  fxRates: Record<string, number> | undefined,
+): PnlAggregate {
+  const withPnl = trades.filter((t) => getPnl(t) != null);
+  const currency = withPnl.length > 0 && withPnl.every((t) => t.currency === withPnl[0].currency)
+    ? withPnl[0].currency
+    : null;
+  const nativeTotal = currency ? withPnl.reduce((sum, t) => sum + (getPnl(t) ?? 0), 0) : null;
+  const eurTotal = fxRates
+    ? withPnl.reduce((sum, t) => sum + (getPnl(t) ?? 0) * (fxRates[t.currency] ?? 1), 0)
+    : null;
+  return { count: withPnl.length, currency, nativeTotal, eurTotal };
+}
+
+function fmtAggregate(agg: PnlAggregate): string {
+  if (agg.currency && agg.nativeTotal != null) return fmtMoneySigned(agg.nativeTotal, agg.currency);
+  if (agg.eurTotal != null) return fmtMoneySigned(agg.eurTotal, "EUR");
+  return "–";
+}
+
+// Bester/schlechtester Trade: bei Mischwährungen wird zum RANKING auf EUR
+// umgerechnet (sonst vergleicht man USD- mit EUR-Beträgen direkt), die
+// ANZEIGE bleibt aber der native Wert/Währung des jeweiligen Einzeltrades –
+// aussagekräftiger als ein umgerechneter Näherungswert für einen einzelnen,
+// konkreten Trade.
+function extremeTrade(
+  trades: CombinedTradeEntry[],
+  getPnl: (t: CombinedTradeEntry) => number | null,
+  mode: "max" | "min",
+  fxRates: Record<string, number> | undefined,
+): CombinedTradeEntry | null {
+  const withPnl = trades.filter((t) => getPnl(t) != null);
+  if (withPnl.length === 0) return null;
+  const rank = (t: CombinedTradeEntry) => (fxRates ? (getPnl(t) ?? 0) * (fxRates[t.currency] ?? 1) : (getPnl(t) ?? 0));
+  return withPnl.reduce((best, t) => {
+    const better = mode === "max" ? rank(t) > rank(best) : rank(t) < rank(best);
+    return better ? t : best;
+  });
+}
+
 // Sortier-Spalten der Handelshistorie – "Kurs" und "P&L" folgen bewusst
 // derselben isOpen-Verzweigung wie die Anzeige (offene Positionen: Live-
 // Kurs/unrealisierter P&L statt Exit-Preis/realisierter P&L), damit Sortierung
@@ -142,7 +201,26 @@ function SortableTh({
   );
 }
 
-function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FILTERS)[number]["key"] }) {
+function TradeHistorySection({
+  trades, isLoading, saxoError, realized, gewinner, verlierer, offenCount, closedCount,
+}: {
+  // Bereits vom Broker-Filter (siehe Performance()) eingeschränkte, über
+  // beide Broker gemergte Liste – EINZIGE Quelle, dieselbe wie für die
+  // Kennzahlen-Kacheln oben (Fix, siehe aggregatePnl-Docstring). Der
+  // Status-Filter hier unten ist eine reine Tabellen-Einschränkung und bleibt
+  // bewusst außerhalb der Zusammenfassung (sonst würde z.B. bei Status=
+  // "Offen" die Zeile "Geschlossen: 0" zeigen, obwohl geschlossene Trades für
+  // diesen Broker durchaus existieren) – realized/gewinner/verlierer/
+  // offenCount/closedCount kommen deshalb als fertige Werte vom Parent.
+  trades: CombinedTradeEntry[];
+  isLoading: boolean;
+  saxoError: boolean;
+  realized: PnlAggregate;
+  gewinner: number;
+  verlierer: number;
+  offenCount: number;
+  closedCount: number;
+}) {
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["key"]>("alle");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("date");
@@ -157,46 +235,9 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
     }
   };
 
-  const { data: alpacaHistory = [], isLoading: alpacaLoading } = useQuery({
-    queryKey: ["trade-history", "alpaca"],
-    queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { limit: 50 } }).then((r) => r.data),
-  });
-
-  // Saxo bewusst nicht Teil des Loading-Gates – fällt die Saxo-API aus,
-  // zeigt die Tabelle einfach nur die Alpaca-Historie (siehe saxoError unten).
-  const { data: saxoHistory = [], isLoading: saxoLoading, isError: saxoError } = useQuery({
-    queryKey: ["trade-history", "saxo"],
-    queryFn: () => api.get<SaxoTradeEntry[]>("/api/saxo/trades/history", { params: { limit: 50 } }).then((r) => r.data),
-  });
-
-  // fx_rates_to_eur fürs Umrechnen des kombinierten P&L in der Kopfzeile
-  // (siehe Uebersicht.tsx – gleiches Prinzip: Alpaca USD + Saxo EUR/GBP
-  // lassen sich nicht ungewandelt addieren).
-  const { data: saxoOverview } = useQuery({
-    queryKey: ["overview", "saxo"],
-    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
-  });
-
-  const isLoading = alpacaLoading || saxoLoading;
-
-  const merged = useMemo(() => {
-    const combined: CombinedTradeEntry[] = [
-      ...alpacaHistory.map(fromAlpacaTrade),
-      ...saxoHistory.map(fromSaxoTrade),
-    ];
-    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    return combined;
-  }, [alpacaHistory, saxoHistory]);
-
-  // Broker-Filter ist jetzt global (siehe Performance()) und bestimmt auch die
-  // Zusammenfassungs-Zeile; der Status-Filter hier ist eine reine
-  // Tabellen-Einschränkung und bleibt bewusst außerhalb der Zusammenfassung
-  // (sonst würde z.B. bei Status="Offen" die Zeile "Geschlossen: 0" zeigen,
-  // obwohl geschlossene Trades für diesen Broker durchaus existieren).
-  const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
   const history = statusFilter === "alle"
-    ? brokerFiltered
-    : brokerFiltered.filter((t) => (statusFilter === "offen" ? t.status === "OPEN" : t.status !== "OPEN"));
+    ? trades
+    : trades.filter((t) => (statusFilter === "offen" ? t.status === "OPEN" : t.status !== "OPEN"));
 
   // Sortierung wirkt auf die bereits Broker-/Status-gefilterte Liste – rein
   // clientseitig, die history ist mit limit=50 pro Broker klein genug.
@@ -217,23 +258,6 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
     });
     return arr;
   }, [history, sortKey, sortDir]);
-
-  // Zusammenfassung bleibt bewusst auf geschlossene Trades beschränkt (pnl ist
-  // für OPEN-Trades unverändert NULL, siehe trading_api(_saxo).py) – das ist
-  // weiterhin der realisierte P&L, keine Änderung an dieser Definition. Die
-  // Summe wird als EUR-Näherung angezeigt sobald mehr als eine Währung
-  // vorkommt (Alpaca=USD, Saxo=EUR/GBP je nach Börse).
-  const closed = brokerFiltered.filter((t) => t.pnl !== null);
-  const offen = brokerFiltered.filter((t) => t.status === "OPEN");
-  const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;
-  const verlierer = closed.filter((t) => (t.pnl ?? 0) <= 0).length;
-
-  const fxRates = saxoOverview?.fx_rates_to_eur;
-  const gesamtPnlEur = fxRates
-    ? closed.reduce((sum, t) => sum + (t.pnl ?? 0) * (fxRates[t.currency] ?? 1), 0)
-    : null;
-  const singleCurrency = closed.length > 0 && closed.every((t) => t.currency === closed[0].currency) ? closed[0].currency : null;
-  const gesamtPnlNative = singleCurrency ? closed.reduce((sum, t) => sum + (t.pnl ?? 0), 0) : null;
 
   return (
     <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
@@ -262,17 +286,12 @@ function TradeHistorySection({ brokerFilter }: { brokerFilter: (typeof BROKER_FI
 
       {!isLoading && history.length > 0 && (
         <div className="text-xs text-text-muted font-figures flex flex-wrap gap-x-3 gap-y-1 mb-4">
-          {offen.length > 0 && <span className="text-paper">Offen: {offen.length}</span>}
-          <span>Geschlossen: {closed.length}</span>
+          {offenCount > 0 && <span className="text-paper">Offen: {offenCount}</span>}
+          <span>Geschlossen: {closedCount}</span>
           <span className="text-gain">Gewinner: {gewinner}</span>
           <span className="text-loss">Verlierer: {verlierer}</span>
-          <span className={gainLossClass(gesamtPnlNative ?? gesamtPnlEur)}>
-            P&L{singleCurrency ? "" : " (≈ EUR)"}:{" "}
-            {singleCurrency
-              ? fmtMoneySigned(gesamtPnlNative, singleCurrency)
-              : gesamtPnlEur !== null
-                ? fmtMoneySigned(gesamtPnlEur, "EUR")
-                : "–"}
+          <span className={gainLossClass(realized.nativeTotal ?? realized.eurTotal)}>
+            P&L{realized.currency ? "" : " (≈ EUR)"}: {fmtAggregate(realized)}
           </span>
         </div>
       )}
@@ -468,16 +487,56 @@ export default function Performance() {
     queryFn: () => api.get<Benchmark>("/api/benchmark", { params: { days: 30 } }).then((r) => r.data),
   });
 
-  const { data: overview } = useQuery({
-    queryKey: ["overview"],
-    queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
+  // Handelshistorie (offen+geschlossen, beide Broker) – EINZIGE Quelle für
+  // sowohl die Kennzahlen-Kacheln oben als auch die Zusammenfassungs-Zeile
+  // unter der Tabelle (siehe aggregatePnl-Docstring oben für die Begründung).
+  const { data: alpacaHistory = [], isLoading: alpacaHistLoading } = useQuery({
+    queryKey: ["trade-history", "alpaca"],
+    queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { limit: 50 } }).then((r) => r.data),
   });
+  // Saxo bewusst nicht Teil des Loading-Gates – fällt die Saxo-API aus,
+  // zeigt die Tabelle/Kacheln einfach nur die Alpaca-Historie.
+  const { data: saxoHistory = [], isLoading: saxoHistLoading, isError: saxoHistError } = useQuery({
+    queryKey: ["trade-history", "saxo"],
+    queryFn: () => api.get<SaxoTradeEntry[]>("/api/saxo/trades/history", { params: { limit: 50 } }).then((r) => r.data),
+  });
+  const historyLoading = alpacaHistLoading || saxoHistLoading;
 
-  const usdToEur = saxoOverview?.fx_rates_to_eur?.USD ?? null;
+  const merged = useMemo(() => {
+    const combined: CombinedTradeEntry[] = [
+      ...alpacaHistory.map(fromAlpacaTrade),
+      ...saxoHistory.map(fromSaxoTrade),
+    ];
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return combined;
+  }, [alpacaHistory, saxoHistory]);
 
-  // Chart-Währung folgt dem Broker-Filter: Alpaca=USD (unverändert), Saxo=EUR
-  // (nativ, keine Umrechnung nötig), Alle=EUR-Näherung (siehe unten).
-  const chartCurrency = brokerFilter === "saxo" ? "EUR" : brokerFilter === "alle" ? "EUR" : "USD";
+  const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
+  const closed = brokerFiltered.filter((t) => t.pnl !== null);
+  const offen = brokerFiltered.filter((t) => t.status === "OPEN");
+  const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;
+  const verlierer = closed.length - gewinner;
+  const winRate = closed.length ? (gewinner / closed.length) * 100 : null;
+
+  const fxRates = saxoOverview?.fx_rates_to_eur;
+  const realized = useMemo(() => aggregatePnl(closed, (t) => t.pnl, fxRates), [closed, fxRates]);
+  const unrealized = useMemo(() => aggregatePnl(offen, (t) => t.unrealized_pnl, fxRates), [offen, fxRates]);
+  const realizedTotal = realized.count > 0
+    ? (realized.currency && realized.nativeTotal != null ? realized.nativeTotal : realized.eurTotal) ?? null
+    : null;
+  const avgPnlPerTrade = realizedTotal != null ? realizedTotal / realized.count : null;
+  const avgPnlCurrency = realized.currency ?? "EUR";
+  const bestTrade = useMemo(() => extremeTrade(closed, (t) => t.pnl, "max", fxRates), [closed, fxRates]);
+  const worstTrade = useMemo(() => extremeTrade(closed, (t) => t.pnl, "min", fxRates), [closed, fxRates]);
+
+  const usdToEur = fxRates?.USD ?? null;
+  // "Alle" kombiniert Alpaca+Saxo NUR, wenn ein aktueller USD/EUR-Kurs
+  // vorliegt (siehe chartData unten) – ohne den fällt die Ansicht auf reine
+  // Alpaca-Werte in USD zurück. chartCurrency folgt dieser Unterscheidung,
+  // damit Achse/Tooltip nie € anzeigen, während tatsächlich rohe USD-Werte
+  // im Chart stecken (vorheriger Bug: Fallback blieb immer auf "EUR" gelabelt).
+  const canMergeAll = brokerFilter === "alle" && usdToEur != null;
+  const chartCurrency = brokerFilter === "saxo" ? "EUR" : brokerFilter === "alpaca" ? "USD" : (canMergeAll ? "EUR" : "USD");
 
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -492,20 +551,21 @@ export default function Performance() {
     }
     // "Alle": kombinierter Tageswert über Datums-Union. Solange Saxo für ein
     // Datum noch keinen Snapshot hat (Account existierte damals schlicht
-    // noch nicht), trägt es dort korrekterweise 0 zum Total bei – das ist
-    // keine Näherung, sondern der tatsächliche historische Gesamtwert.
-    // Näherung ist NUR die Umrechnung: mangels historischer FX-Kurse wird
-    // der heutige USD/EUR-Kurs rückwirkend auf alle Alpaca-Tage angewendet
-    // (identisches Prinzip wie die "≈"-Kacheln in Uebersicht.tsx).
-    if (!usdToEur) {
+    // noch nicht/Snapshot-Tracking lief noch nicht), trägt es dort
+    // korrekterweise 0 zum Total bei – das ist keine Näherung, sondern der
+    // tatsächliche historische Gesamtwert. Näherung ist NUR die Umrechnung:
+    // mangels historischer FX-Kurse wird der heutige USD/EUR-Kurs
+    // rückwirkend auf alle Alpaca-Tage angewendet (identisches Prinzip wie
+    // die "≈"-Kacheln in Uebersicht.tsx).
+    if (!canMergeAll) {
       return slice(data.snapshots).map((s) => ({ date: formatDatum(s.log_date), wert: s.portfolio_value }));
     }
     const byDate = new Map<string, number>();
-    for (const s of data.snapshots) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value * usdToEur);
+    for (const s of data.snapshots) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value * usdToEur!);
     for (const s of saxoPerf?.snapshots ?? []) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value_eur);
-    const merged = Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    return slice(merged).map(([log_date, wert]) => ({ date: formatDatum(log_date), wert }));
-  }, [data, saxoPerf, usdToEur, period, brokerFilter]);
+    const mergedChart = Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return slice(mergedChart).map(([log_date, wert]) => ({ date: formatDatum(log_date), wert }));
+  }, [data, saxoPerf, usdToEur, canMergeAll, period, brokerFilter]);
 
   if (isLoading) {
     return (
@@ -519,10 +579,6 @@ export default function Performance() {
   if (isError || !data) {
     return <ErrorState message="Performance-Daten konnten nicht geladen werden." onRetry={() => refetch()} />;
   }
-
-  const { stats } = data;
-  const winRate = stats.total_trades ? ((stats.wins ?? 0) / stats.total_trades) * 100 : null;
-  const unrealizedPnl = overview?.open_trades?.reduce((sum, t) => sum + t.unrealized_pnl, 0) ?? 0;
 
   const benchmarkRows = benchmark
     ? [
@@ -539,7 +595,11 @@ export default function Performance() {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-7 gap-2 md:gap-4">
-        <KPICard label="Trades gesamt" value={String(stats.total_trades ?? 0)} color="neutral" />
+        <KPICard
+          label="Trades gesamt"
+          value={historyLoading ? "…" : String(brokerFiltered.length)}
+          color="neutral"
+        />
         <KPICard
           label="Trefferquote"
           value={winRate !== null ? `${winRate.toFixed(0)}%` : "–"}
@@ -547,21 +607,33 @@ export default function Performance() {
         />
         <KPICard
           label="Ø P&L"
-          value={fmtUsdSigned(stats.avg_pnl)}
-          color={stats.avg_pnl !== null && stats.avg_pnl >= 0 ? "gain" : "loss"}
+          value={avgPnlPerTrade != null ? fmtMoneySigned(avgPnlPerTrade, avgPnlCurrency) : "–"}
+          color={avgPnlPerTrade != null && avgPnlPerTrade >= 0 ? "gain" : "loss"}
+          subtext={!realized.currency && realized.eurTotal != null ? "≈ EUR" : undefined}
         />
-        <KPICard label="Bester Trade" value={fmtUsdSigned(stats.best_trade)} color="gain" />
-        <KPICard label="Schlechtester Trade" value={fmtUsdSigned(stats.worst_trade)} color="loss" />
+        <KPICard
+          label="Bester Trade"
+          value={bestTrade ? fmtMoneySigned(bestTrade.pnl ?? 0, bestTrade.currency) : "–"}
+          color="gain"
+          subtext={bestTrade?.ticker}
+        />
+        <KPICard
+          label="Schlechtester Trade"
+          value={worstTrade ? fmtMoneySigned(worstTrade.pnl ?? 0, worstTrade.currency) : "–"}
+          color="loss"
+          subtext={worstTrade?.ticker}
+        />
         <KPICard
           label="Realisierter P&L"
-          value={overview ? fmtUsdSigned(overview.realized_pnl) : "…"}
-          color={overview && overview.realized_pnl >= 0 ? "gain" : "loss"}
+          value={fmtAggregate(realized)}
+          color={(realized.nativeTotal ?? realized.eurTotal ?? 0) >= 0 ? "gain" : "loss"}
+          subtext={!realized.currency && realized.eurTotal != null ? "≈ EUR" : undefined}
         />
         <KPICard
           label="Unrealisierter P&L"
-          value={overview ? fmtUsdSigned(unrealizedPnl) : "…"}
-          color={unrealizedPnl >= 0 ? "gain" : "loss"}
-          subtext="nicht realisiert"
+          value={fmtAggregate(unrealized)}
+          color={(unrealized.nativeTotal ?? unrealized.eurTotal ?? 0) >= 0 ? "gain" : "loss"}
+          subtext={!unrealized.currency && unrealized.eurTotal != null ? "≈ EUR" : "nicht realisiert"}
         />
       </div>
 
@@ -608,7 +680,9 @@ export default function Performance() {
         </div>
         {brokerFilter === "alle" && (
           <div className="text-[0.65rem] text-text-disabled mb-3">
-            ≈ EUR, heutiger USD/EUR-Kurs rückwirkend auf Alpaca-Werte angewendet
+            {canMergeAll
+              ? "Alpaca + Saxo kombiniert, ≈ EUR (heutiger USD/EUR-Kurs rückwirkend auf Alpaca-Werte angewendet). Saxo-Historie erst seit Kurzem verfügbar, daher für ältere Tage ggf. nur Alpaca-Anteil."
+              : "Saxo-Umrechnungskurs aktuell nicht verfügbar – zeigt vorübergehend nur Alpaca (USD)."}
           </div>
         )}
         {chartData.length === 0 ? (
@@ -639,7 +713,16 @@ export default function Performance() {
         )}
       </div>
 
-      <TradeHistorySection brokerFilter={brokerFilter} />
+      <TradeHistorySection
+        trades={brokerFiltered}
+        isLoading={historyLoading}
+        saxoError={saxoHistError}
+        realized={realized}
+        gewinner={gewinner}
+        verlierer={verlierer}
+        offenCount={offen.length}
+        closedCount={closed.length}
+      />
 
       <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
         <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-4">

@@ -59,8 +59,13 @@ function BrokerLabel({ name }: { name: string }) {
   );
 }
 
-function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; saxoOverview?: SaxoOverview; cfg: Record<string, string> }) {
+function BrokerStatus({
+  overview, saxoOverview, cfg, saxoCfg,
+}: {
+  overview?: Overview; saxoOverview?: SaxoOverview; cfg: Record<string, string>; saxoCfg: Record<string, string>;
+}) {
   const drainMode = (cfg.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
+  const saxoDrainMode = (saxoCfg.SAXO_DRAIN_MODE ?? "false").toLowerCase() === "true";
   const alpacaOpen = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca").length;
 
   return (
@@ -86,9 +91,16 @@ function BrokerStatus({ overview, saxoOverview, cfg }: { overview?: Overview; sa
         <div>
           <div className="flex items-center justify-between">
             <BrokerLabel name="SAXO" />
-            {/* Saxo-Bot kennt bewusst nur LIVE (kein Paper-Modus, siehe
-                SaxoOverview/fromSaxoOpenTrade in api.ts). */}
-            <ModeBadge mode="LIVE" />
+            <div className="flex items-center gap-1">
+              {saxoDrainMode && (
+                <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-orange-500/20 text-orange-400">
+                  Drain
+                </span>
+              )}
+              {/* Saxo-Bot kennt bewusst nur LIVE (kein Paper-Modus, siehe
+                  SaxoOverview/fromSaxoOpenTrade in api.ts). */}
+              <ModeBadge mode="LIVE" />
+            </div>
           </div>
           <div className="text-text-muted font-figures mt-0.5">
             Konto: {saxoOverview ? `€${saxoOverview.portfolio_value_eur.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {saxoOverview?.open_trades.length ?? "…"}
@@ -125,8 +137,13 @@ export default function Sidebar({
     queryKey: ["bot-config"],
     queryFn: () => api.get<BotConfigEntry[]>("/api/bot-config").then((r) => r.data),
   });
+  const { data: saxoConfig } = useQuery({
+    queryKey: ["bot-config", "saxo"],
+    queryFn: () => api.get<BotConfigEntry[]>("/api/saxo/bot-config").then((r) => r.data),
+  });
 
   const cfg = Object.fromEntries((config ?? []).map((c) => [c.key, c.value]));
+  const saxoCfg = Object.fromEntries((saxoConfig ?? []).map((c) => [c.key, c.value]));
   const isLive = overview?.trading_mode === "LIVE";
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -198,7 +215,7 @@ export default function Sidebar({
           </div>
         )}
 
-        <BrokerStatus overview={overview} saxoOverview={saxoOverview} cfg={cfg} />
+        <BrokerStatus overview={overview} saxoOverview={saxoOverview} cfg={cfg} saxoCfg={saxoCfg} />
 
         <button
           onClick={logout}

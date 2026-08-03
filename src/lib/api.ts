@@ -42,6 +42,8 @@ export type OpenTrade = {
   quantity: number;
   capital_used: number;
   rule_score: number;
+  // yfinance-Sektor zum Entry-Zeitpunkt, siehe TradeHistoryEntry.sector.
+  sector: string | null;
   trailing_sl_active: boolean;
   trailing_sl_price: number | null;
   created_at: string;
@@ -92,6 +94,7 @@ export type SaxoOpenTrade = {
   quantity: number;
   capital_used_eur: number;
   rule_score: number;
+  sector: string | null;
   created_at: string;
   current_price: number;
   unrealized_pnl: number;
@@ -342,6 +345,17 @@ export function mergeScanDays(alpacaDays: ScanDay[], saxoDays: SaxoScanDay[]): S
 export type ScanLogStat = { grund: string; anzahl: number };
 
 export type BotConfigEntry = { key: string; value: string; beschreibung: string | null };
+
+// Kapital-Einstellungen Prozent-Umbau (Alpaca+Saxo identisch, siehe
+// trading_api.py::get_capital_allocations_endpoint / trading_api_saxo.py-
+// Pendant). `allocations` ist bewusst ein generisches Record<string,number>
+// statt fest benannter Felder – neue Kategorien landen einfach als neuer
+// Key darin, kein Typ-Update nötig.
+export type CapitalAllocations = {
+  allocations: Record<string, number>;
+  effective_max_capital_total_bot: number;
+  real_total_capital: number | null;
+};
 
 export type EntrySlot = {
   id: number;

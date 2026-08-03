@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info } from "lucide-react";
 import {
-  api, BotConfigEntry, EntrySlot, Overview, SaxoOverview, LearningProposal, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
+  api, BotConfigEntry, EntrySlot, Overview, SaxoOverview, LearningProposal, CapitalAllocations,
+  GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
@@ -17,14 +18,21 @@ type BrokerKey = "alpaca" | "saxo";
 // von Alpacas bot_config, siehe trading_api_saxo.py). Presets/Entry-Slots/
 // Lernvorschläge existieren für Saxo (noch) nicht (fixe Zeitfenster pro
 // Börse statt konfigurierbarer Zeitslots, kein Backlook-Lernzyklus).
+// MAX_CAPITAL_TOTAL/SAXO_MAX_CAPITAL_TOTAL bewusst NICHT mehr Teil dieser
+// Listen (Aufgabe "Kapital-Einstellungen Prozent-Umbau") – "Gesamtkapital"
+// ist jetzt ein reiner Anzeige-Wert (echtes Broker-Kapital), keine editierbare
+// GuardrailCard mehr; die Steuerung läuft über CapitalAllocationSection
+// (Bot-Anteil-Slider). Der alte Config-Key bleibt in der DB bestehen (Fallback
+// für get_portfolio_value()/Profit-Alert, siehe broker.py), ist hier aber
+// absichtlich nicht mehr editierbar.
 const ALPACA_GUARDRAIL_KEYS = [
-  "MAX_CAPITAL_TOTAL", "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
+  "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
   "DAILY_LOSS_LIMIT_PCT", "MIN_SIGNAL_SCORE", "VIX_PAUSE_THRESHOLD",
   "ATR_MULTIPLIER_SL", "ATR_MULTIPLIER_TP", "MAX_HOLDING_DAYS", "VOLATILE_SEGMENT_PCT", "EARNINGS_BUFFER_DAYS",
 ];
 
 const SAXO_GUARDRAIL_KEYS = [
-  "SAXO_MAX_CAPITAL_TOTAL", "SAXO_MAX_CAPITAL_PER_TRADE", "SAXO_MAX_OPEN_POSITIONS",
+  "SAXO_MAX_CAPITAL_PER_TRADE", "SAXO_MAX_OPEN_POSITIONS",
   "SAXO_MAX_TRADES_PER_DAY", "SAXO_DAILY_LOSS_LIMIT_PCT", "SAXO_MIN_SIGNAL_SCORE",
   "SAXO_STOP_LOSS_PCT", "SAXO_TAKE_PROFIT_PCT",
 ];
@@ -72,7 +80,6 @@ const PRESETS: {
 ];
 
 const GUARDRAIL_TOOLTIPS: Record<string, string> = {
-  MAX_CAPITAL_TOTAL: "Maximales Kapital das der Bot insgesamt einsetzen darf. Empfehlung: nur Kapital das du entbehren kannst.",
   MAX_CAPITAL_PER_TRADE: "Maximaler Einsatz pro einzelnem Trade. Bei $50 und Score 80 kauft der Bot für $50.",
   MAX_OPEN_POSITIONS: "Wie viele Trades gleichzeitig offen sein dürfen. Bei Erreichen werden keine neuen Käufe getätigt.",
   MAX_TRADES_PER_DAY: "Maximale Anzahl neuer Käufe pro Handelstag. Wird dynamisch auf die Zeitslots verteilt.",
@@ -113,25 +120,29 @@ function activePreset(config: Record<string, string>): PresetKey | null {
   return null;
 }
 
-// MAX_OPEN_POSITIONS × MAX_CAPITAL_PER_TRADE darf MAX_CAPITAL_TOTAL nicht
-// übersteigen – Live-Validierung während der Eingabe. Funktioniert für
-// beide Broker: Key-Namen (mit/ohne SAXO_-Präfix) und Währungssymbol werden
-// aus editingKey abgeleitet statt hartkodiert zu sein.
+// MAX_OPEN_POSITIONS × MAX_CAPITAL_PER_TRADE darf das effektive Bot-Kapital
+// (Gesamtkapital × Bot-Anteil%, siehe CapitalAllocationSection) nicht
+// übersteigen – Live-Validierung während der Eingabe. Funktioniert für beide
+// Broker: Key-Namen (mit/ohne SAXO_-Präfix) und Währungssymbol werden aus
+// editingKey abgeleitet statt hartkodiert zu sein. `effectiveMaxCapitalTotal`
+// kommt vom Parent aus /api/capital-allocations (Aufgabe "Kapital-
+// Einstellungen Prozent-Umbau" – ersetzt den vormals hier gelesenen
+// statischen config[MAX_CAPITAL_TOTAL]-Wert).
 function validateCapitalSettings(
-  config: Record<string, string>, editingKey: string, draftRawValue: string
+  config: Record<string, string>, editingKey: string, draftRawValue: string,
+  effectiveMaxCapitalTotal: number | null,
 ): { valid: boolean; message?: string } {
   const isSaxo = editingKey.startsWith("SAXO_");
   const prefix = isSaxo ? "SAXO_" : "";
   const openKey = `${prefix}MAX_OPEN_POSITIONS`;
   const perTradeKey = `${prefix}MAX_CAPITAL_PER_TRADE`;
-  const totalKey = `${prefix}MAX_CAPITAL_TOTAL`;
   const currencySymbol = isSaxo ? "€" : "$";
 
   if (editingKey !== openKey && editingKey !== perTradeKey) return { valid: true };
 
   const maxOpenPositions = Number(editingKey === openKey ? draftRawValue : config[openKey]);
   const maxCapitalPerTrade = Number(editingKey === perTradeKey ? draftRawValue : config[perTradeKey]);
-  const gesamtkapital = Number(config[totalKey]);
+  const gesamtkapital = effectiveMaxCapitalTotal;
 
   if (!maxOpenPositions || !maxCapitalPerTrade || !gesamtkapital || Number.isNaN(maxOpenPositions) || Number.isNaN(maxCapitalPerTrade)) {
     return { valid: true };
@@ -141,14 +152,125 @@ function validateCapitalSettings(
     const maxMoeglich = Math.floor(gesamtkapital / maxCapitalPerTrade);
     return {
       valid: false,
-      message: `Mit diesen Einstellungen würdest du ${maxInvestiert.toLocaleString("de-DE")} ${currencySymbol} investieren, aber nur ${gesamtkapital.toLocaleString("de-DE")} ${currencySymbol} verfügbar. Maximal ${maxMoeglich} Positionen möglich.`,
+      message: `Mit diesen Einstellungen würdest du ${maxInvestiert.toLocaleString("de-DE")} ${currencySymbol} investieren, aber nur ${gesamtkapital.toLocaleString("de-DE")} ${currencySymbol} Bot-Kapital verfügbar (Gesamtkapital × Bot-Anteil). Maximal ${maxMoeglich} Positionen möglich.`,
     };
   }
   return { valid: true };
 }
 
-function isCapitalKey(key: string): boolean {
-  return key.endsWith("MAX_CAPITAL_TOTAL") || key.endsWith("MAX_CAPITAL_PER_TRADE");
+// Kapital-Einstellungen Prozent-Umbau (Alpaca+Saxo identisch, siehe
+// trading_api(_saxo).py::get_capital_allocations_endpoint). "Gesamtkapital"/
+// "Freies Kapital" sind reine Anzeige-Werte vom Broker (nicht mehr
+// editierbar, siehe ALPACA_GUARDRAIL_KEYS-Kommentar oben) – gesteuert wird
+// nur noch der Bot-Anteil% über den gekoppelten Zwei-Segment-Slider
+// (active_trading% = 100 - bot%, siehe PUT-Payload unten). Der Slider ist
+// bewusst generisch über CAPITAL_ALLOCATION-Backend-Kategorien gebaut (liest
+// "bot"/"active_trading" aus der Response statt sie hart zu verdrahten) –
+// eine dritte Kategorie würde hier zusätzlich angezeigt, bräuchte aber (wie
+// spezifiziert) noch keine UI-Neubau-Arbeit für die bestehenden zwei.
+function CapitalAllocationSection({
+  apiPrefix, queryKeyPrefix, currency, totalCapital, freeCapital, investedCapital,
+}: {
+  apiPrefix: string;
+  queryKeyPrefix: string;
+  currency: string;
+  totalCapital: number | null;
+  freeCapital: number | null;
+  investedCapital: number | null;
+}) {
+  const queryClient = useQueryClient();
+  const [draftBotPct, setDraftBotPct] = useState<number | null>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["capital-allocations", queryKeyPrefix],
+    queryFn: () => api.get<CapitalAllocations>(`${apiPrefix}/capital-allocations`).then((r) => r.data),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (botPct: number) =>
+      api.put(`${apiPrefix}/capital-allocations`, {
+        allocations: { bot: botPct, active_trading: Math.round((100 - botPct) * 10) / 10 },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["capital-allocations", queryKeyPrefix] });
+      setDraftBotPct(null);
+    },
+  });
+
+  const savedBotPct = data?.allocations.bot ?? null;
+  const botPct = draftBotPct ?? savedBotPct ?? 50;
+  const activePct = Math.round((100 - botPct) * 10) / 10;
+  const effectiveMaxCapitalTotalBot = data?.effective_max_capital_total_bot ?? null;
+
+  function commitDraft() {
+    if (draftBotPct != null && draftBotPct !== savedBotPct) mutation.mutate(draftBotPct);
+    else setDraftBotPct(null);
+  }
+
+  const showTransitionWarning =
+    investedCapital != null && effectiveMaxCapitalTotalBot != null && investedCapital > effectiveMaxCapitalTotalBot;
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Kapital-Einstellungen</h3>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-bg-card border border-border rounded-card px-4 py-3">
+          <div className="text-text-muted text-xs">Gesamtkapital</div>
+          <div className="font-figures text-lg mt-1">{totalCapital != null ? fmtMoney(totalCapital, currency, 2) : "…"}</div>
+          <div className="text-[0.7rem] text-text-disabled mt-1">Freies + gebundenes Kapital, direkt vom Broker</div>
+        </div>
+        <div className="bg-bg-card border border-border rounded-card px-4 py-3">
+          <div className="text-text-muted text-xs">Freies Kapital</div>
+          <div className="font-figures text-lg mt-1">{freeCapital != null ? fmtMoney(freeCapital, currency, 2) : "…"}</div>
+          <div className="text-[0.7rem] text-text-disabled mt-1">Direkt vom Broker</div>
+        </div>
+      </div>
+
+      <div className="bg-bg-card border border-border rounded-card px-4 py-4">
+        <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+          <div className="text-sm font-medium">Kapital-Aufteilung</div>
+          <div className="text-xs text-text-muted font-figures">
+            Bot {botPct.toFixed(1)}% · Aktiver Handel {activePct.toFixed(1)}%
+          </div>
+        </div>
+        <div className="flex h-3 rounded-btn overflow-hidden mb-2">
+          <div className="bg-gold transition-[width]" style={{ width: `${botPct}%` }} />
+          <div className="bg-paper transition-[width]" style={{ width: `${activePct}%` }} />
+        </div>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={0.5}
+          value={botPct}
+          disabled={isLoading || mutation.isPending}
+          onChange={(e) => setDraftBotPct(Number(e.target.value))}
+          onMouseUp={commitDraft}
+          onTouchEnd={commitDraft}
+          onKeyUp={commitDraft}
+          className="w-full accent-gold"
+          aria-label="Bot-Anteil in Prozent"
+        />
+        <div className="text-xs text-text-muted mt-2 font-figures">
+          Bot-Kapital: {effectiveMaxCapitalTotalBot != null ? fmtMoney(effectiveMaxCapitalTotalBot, currency, 2) : "…"}
+          {" "}(= Gesamtkapital × Bot-Anteil)
+        </div>
+        {(mutation.isError || isError) && <p className="text-xs text-loss mt-1">Speichern/Laden fehlgeschlagen.</p>}
+      </div>
+
+      {showTransitionWarning && (
+        <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-card px-3 py-2 flex items-start gap-2">
+          <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+          <span>
+            Aktuell mehr gebunden ({fmtMoney(investedCapital!, currency, 2)}) als der neue Bot-Anteil erlaubt
+            ({fmtMoney(effectiveMaxCapitalTotalBot!, currency, 2)}) – bestehende Positionen laufen normal weiter
+            (kein Zwangsverkauf), der Bot eröffnet aber keine neuen Positionen, bis wieder Spielraum vorhanden ist.
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PresetsSection({ config }: { config: Record<string, string> }) {
@@ -193,10 +315,14 @@ function PresetsSection({ config }: { config: Record<string, string> }) {
 }
 
 function GuardrailCard({
-  botKey, value, config, apiPrefix = "/api", queryKeyPrefix = "alpaca", liveCash,
+  botKey, value, config, apiPrefix = "/api", queryKeyPrefix = "alpaca", liveCash, effectiveMaxCapitalTotal,
 }: {
   botKey: string; value: string; config: Record<string, string>; apiPrefix?: string; queryKeyPrefix?: string;
   liveCash?: number | null;
+  // Gesamtkapital × Bot-Anteil% (siehe CapitalAllocationSection) – Basis für
+  // die MAX_OPEN_POSITIONS×MAX_CAPITAL_PER_TRADE-Validierung unten. null
+  // solange /api/capital-allocations noch lädt.
+  effectiveMaxCapitalTotal?: number | null;
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -218,14 +344,9 @@ function GuardrailCard({
   });
 
   const draftRawValue = parseGuardrailInput(botKey, draft);
-  const validation = editing ? validateCapitalSettings(config, botKey, draftRawValue) : { valid: true };
-
-  // Nur für MAX_CAPITAL_TOTAL relevant (AUFGABE 2) – rein informativ, blockiert
-  // NICHT das Speichern (Kunde plant evtl. noch Kapital nachzulegen).
-  const isTotalKey = botKey.endsWith("MAX_CAPITAL_TOTAL");
-  const configuredValue = Number(editing ? draftRawValue : value);
-  const overLiveCash =
-    isTotalKey && liveCash != null && !Number.isNaN(configuredValue) && configuredValue > liveCash;
+  const validation = editing
+    ? validateCapitalSettings(config, botKey, draftRawValue, effectiveMaxCapitalTotal ?? null)
+    : { valid: true };
 
   function startEdit() {
     setDraft(displayValue.replace("%", "").replace(" $", "").trim());
@@ -285,15 +406,6 @@ function GuardrailCard({
           Aktuell verfügbar bei {brokerLabel}: {liveCash == null ? "–" : fmtMoney(liveCash, currency, 2)}
         </div>
       )}
-      {overLiveCash && (
-        <div className="text-xs text-loss mt-1 flex items-start gap-1">
-          <AlertTriangle size={13} strokeWidth={1.5} className="shrink-0 mt-0.5" />
-          <span>
-            Dein eingestelltes Limit liegt über dem aktuell verfügbaren Kapital bei {brokerLabel} — der Bot
-            kann dieses Limit erst nutzen, wenn mehr Kapital auf dem Konto liegt.
-          </span>
-        </div>
-      )}
       {mutation.isError && <div className="text-xs text-loss mt-1">Speichern fehlgeschlagen</div>}
     </div>
   );
@@ -303,13 +415,27 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
   const queryClient = useQueryClient();
 
   const { data: overview } = useQuery({
-    queryKey: ["overview"],
+    queryKey: ["overview", "alpaca"],
     queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
   });
+  const { data: saxoOverview } = useQuery({
+    queryKey: ["overview", "saxo"],
+    queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
+  });
+  // Eigene, von der Alpaca-config-Prop unabhängige Query – SAXO_DRAIN_MODE
+  // lebt in saxo_bot_config (eigener Prozess/Port, siehe trading_api_saxo.py),
+  // nicht in Alpacas bot_config (config-Prop kommt von dort).
+  const { data: saxoConfigList } = useQuery({
+    queryKey: ["bot-config", "saxo"],
+    queryFn: () => api.get<BotConfigEntry[]>("/api/saxo/bot-config").then((r) => r.data),
+  });
+  const saxoConfig = Object.fromEntries((saxoConfigList ?? []).map((c) => [c.key, c.value]));
 
   const activeBroker = config.ACTIVE_BROKER ?? "alpaca";
   const drainMode = (config.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
+  const saxoDrainMode = (saxoConfig.SAXO_DRAIN_MODE ?? "false").toLowerCase() === "true";
   const alpacaOpenTrades = (overview?.open_trades ?? []).filter((t) => (t.broker ?? "alpaca") === "alpaca");
+  const saxoOpenTrades = saxoOverview?.open_trades ?? [];
 
   const brokerMutation = useMutation({
     mutationFn: (broker: string) => api.put("/api/bot-config/ACTIVE_BROKER", { value: broker }),
@@ -319,6 +445,13 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
   const drainMutation = useMutation({
     mutationFn: (value: boolean) => api.put("/api/bot-config/ALPACA_DRAIN_MODE", { value: value ? "true" : "false" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config"] }),
+  });
+
+  // Saxo-Pendant zu drainMutation – eigener PUT-Endpoint/Prefix (Saxo-Bot ist
+  // ein komplett eigenständiger Prozess, siehe saxoConfig-Query oben).
+  const saxoDrainMutation = useMutation({
+    mutationFn: (value: boolean) => api.put("/api/saxo/bot-config/SAXO_DRAIN_MODE", { value: value ? "true" : "false" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["bot-config", "saxo"] }),
   });
 
   return (
@@ -347,16 +480,21 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
           </div>
         </label>
 
-        <label
-          className="flex items-start gap-2 px-3 py-2.5 rounded-card border border-border opacity-60 cursor-not-allowed"
-        >
-          <input type="radio" name="active-broker" className="mt-1 accent-gold" disabled checked={false} readOnly />
+        {/* Saxo läuft als eigenständiger Bot-Prozess, nicht über ACTIVE_BROKER
+            umschaltbar (das kennt nur "alpaca"/"ibkr", siehe broker.get_broker)
+            – deshalb reine Status-Anzeige statt eines (nie funktionierenden)
+            Radio-Buttons wie vorher. Konsistent zum Sidebar-BrokerStatus-Widget. */}
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-card border border-border">
+          <div className="mt-1 w-3 h-3 rounded-full bg-gain shrink-0" aria-hidden />
           <div className="text-sm">
             <div className="font-medium">Saxo Bank</div>
-            <div className="text-xs text-text-muted mt-0.5">Weltweit · US + EU + Asien</div>
-            <div className="text-xs mt-1.5 text-text-muted">Status: In Kürze verfügbar</div>
+            <div className="text-xs text-text-muted mt-0.5">Weltweit · US + EU + Asien · läuft parallel zu Alpaca (eigener Prozess)</div>
+            <div className="text-xs mt-1.5 flex items-center gap-3">
+              <span className="text-gain font-medium">Status: LIVE ✅</span>
+              <span className="text-text-muted font-figures">Konto: {saxoOverview ? fmtMoney(saxoOverview.portfolio_value_eur, "EUR", 0) : "…"}</span>
+            </div>
           </div>
-        </label>
+        </div>
       </div>
 
       <div className="bg-bg-card border border-border rounded-card px-4 py-3 flex items-center justify-between">
@@ -388,7 +526,36 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
         </div>
       )}
 
-      {(brokerMutation.isError || drainMutation.isError) && (
+      <div className="bg-bg-card border border-border rounded-card px-4 py-3 flex items-center justify-between">
+        <div>
+          <div className="text-sm font-medium">Saxo Drain Mode</div>
+          <div className="text-xs text-text-muted mt-0.5">Keine neuen Saxo-Käufe – bestehende Positionen laufen aus</div>
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
+          <span className={`text-xs font-semibold ${saxoDrainMode ? "text-orange-400" : "text-text-muted"}`}>
+            {saxoDrainMode ? "AN" : "AUS"}
+          </span>
+          <input
+            type="checkbox" checked={saxoDrainMode}
+            disabled={saxoDrainMutation.isPending}
+            onChange={(e) => saxoDrainMutation.mutate(e.target.checked)}
+          />
+        </label>
+      </div>
+
+      {saxoDrainMode && (
+        <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-card px-3 py-2 flex items-start gap-2">
+          <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+          <span>
+            Saxo kauft keine neuen Positionen mehr.{" "}
+            {saxoOpenTrades.length > 0
+              ? `Bestehende Positionen (${saxoOpenTrades.map((t) => t.ticker).join(", ")}) laufen normal bis SL/TP/Trailing.`
+              : "Aktuell keine offenen Saxo-Positionen."}
+          </span>
+        </div>
+      )}
+
+      {(brokerMutation.isError || drainMutation.isError || saxoDrainMutation.isError) && (
         <p className="text-xs text-loss">Speichern fehlgeschlagen.</p>
       )}
     </div>
@@ -596,6 +763,21 @@ export default function Einstellungen() {
     enabled: broker === "saxo",
   });
   const liveCash = broker === "saxo" ? saxoOverview?.cash_available_eur ?? null : overview?.cash ?? null;
+  const totalCapital = broker === "saxo" ? saxoOverview?.portfolio_value_eur ?? null : overview?.portfolio_value ?? null;
+  // Saxo hat kein eigenes long_market_value-Feld (siehe SaxoOverview) –
+  // Gesamtkapital minus freies Kapital ist dieselbe Näherung, die die
+  // Broker-eigene cash_available_eur/portfolio_value_eur-Trennung ohnehin
+  // schon verwendet (beide direkt von Saxo, siehe trading_api_saxo.py).
+  const investedCapital = broker === "saxo"
+    ? (totalCapital != null && liveCash != null ? totalCapital - liveCash : null)
+    : overview?.long_market_value ?? null;
+  const capitalCurrency = broker === "saxo" ? "EUR" : "USD";
+
+  const { data: capitalAllocations } = useQuery({
+    queryKey: ["capital-allocations", broker],
+    queryFn: () => api.get<CapitalAllocations>(`${apiPrefix}/capital-allocations`).then((r) => r.data),
+  });
+  const effectiveMaxCapitalTotal = capitalAllocations?.effective_max_capital_total_bot ?? null;
 
   return (
     <div className="space-y-8">
@@ -618,6 +800,15 @@ export default function Einstellungen() {
             <>
               {broker === "alpaca" && <PresetsSection config={config} />}
 
+              <CapitalAllocationSection
+                apiPrefix={apiPrefix}
+                queryKeyPrefix={broker}
+                currency={capitalCurrency}
+                totalCapital={totalCapital}
+                freeCapital={liveCash}
+                investedCapital={investedCapital}
+              />
+
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
                   Guardrails {broker === "saxo" && <span className="text-text-disabled normal-case">— eigenes EUR-Budget, komplett getrennt von Alpaca</span>}
@@ -631,7 +822,8 @@ export default function Einstellungen() {
                       config={config}
                       apiPrefix={apiPrefix}
                       queryKeyPrefix={broker}
-                      liveCash={isCapitalKey(key) ? liveCash : undefined}
+                      liveCash={key.endsWith("MAX_CAPITAL_PER_TRADE") ? liveCash : undefined}
+                      effectiveMaxCapitalTotal={effectiveMaxCapitalTotal}
                     />
                   ))}
                 </div>
