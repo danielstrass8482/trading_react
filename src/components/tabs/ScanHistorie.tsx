@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import { api, ScanDay, ScanLogEntry, ScanLogStat, SaxoScanDay, mergeScanDays, MIN_SIGNAL_SCORE } from "@/lib/api";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
@@ -28,6 +28,66 @@ function factorCell(value: number | null | undefined) {
   return <span className={value > 0 ? "text-gain" : "text-loss"}>{value}</span>;
 }
 
+// Grund, warum ein Kandidat NICHT gehandelt wurde (KO-Kriterium/Guardrail/
+// Score unter Schwelle) bzw. Bestätigung, dass er gehandelt wurde – ehemals
+// eine permanent sichtbare "Status"-Spalte (vor der Scan-Historie-
+// Vereinfachung, Commit 319866f), seitdem nur noch als Tooltip auf dem
+// Ticker-Namen sichtbar. Auf Wunsch wiederhergestellt (2026-08-04): reine
+// Tooltips sind auf Mobile praktisch unauffindbar (kein Hover) und selbst
+// auf Desktop leicht zu übersehen. Kompaktes Badge auf Mobile (nur Label,
+// voller Grund im title-Attribut fürs Long-Press), voller Text+Icon auf
+// Desktop – 1:1 aus der ursprünglichen Spezifikation übernommen. Gilt für
+// BEIDE Bots (ScanLogEntry/SaxoScanLogEntry teilen sich dieselben
+// relevanten Felder, siehe mergeScanDays).
+function statusCell(row: ScanLogEntry) {
+  if (row.ko_reason) {
+    const isFairValueKo = row.ko_reason.includes("Fair Value");
+    const colorCls = isFairValueKo ? "text-orange-400" : "text-loss";
+    const badgeCls = isFairValueKo ? "bg-orange-400/15 text-orange-400" : "bg-loss/15 text-loss";
+    return (
+      <>
+        <span
+          className={`md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn ${badgeCls}`}
+          title={`KO: ${row.ko_reason}`}
+        >
+          KO
+        </span>
+        <span className={`hidden md:flex items-center gap-1.5 ${colorCls}`}>
+          <XCircle size={16} strokeWidth={1.5} /> KO: {row.ko_reason}
+        </span>
+      </>
+    );
+  }
+  if (row.trade_executed) {
+    return (
+      <>
+        <span className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gain/15 text-gain">
+          Trade
+        </span>
+        <span className="hidden md:flex text-gain items-center gap-1.5">
+          <CheckCircle size={16} strokeWidth={1.5} /> Trade ausgeführt
+        </span>
+      </>
+    );
+  }
+  if (row.approved) {
+    return (
+      <>
+        <span
+          className="md:hidden text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-gold/15 text-gold"
+          title={row.guardrail_reason ? `Guardrail: ${row.guardrail_reason}` : "Guardrail"}
+        >
+          Guardrail
+        </span>
+        <span className="hidden md:flex text-gold items-center gap-1.5">
+          <AlertTriangle size={16} strokeWidth={1.5} /> Guardrail{row.guardrail_reason ? `: ${row.guardrail_reason}` : ""}
+        </span>
+      </>
+    );
+  }
+  return <span className="text-text-muted">– Score zu niedrig</span>;
+}
+
 type SortDir = "asc" | "desc";
 
 // Score-Spalte für die flachen Ticker-Tabellen (Slot- und Ticker-Suche) –
@@ -40,21 +100,14 @@ function scanColumns<T extends ScanLogEntry>(extraColumns: Column<T>[] = []): Co
   return [
     {
       key: "ticker", label: "Ticker",
-      // KO-Grund als Tooltip (Aufgabe "leere Faktor-Spalten"): ein Ticker,
-      // der schon an einem frühen KO-Gate (Earnings-Risiko/5-Tage-Move/
-      // Sektor-Blacklist, siehe rule_engine.analyze_ticker) scheitert, kommt
-      // nie bis zur eigentlichen 6-Faktoren-Berechnung – rsi_score/sma_score/
-      // etc. sind für diese Zeilen deshalb korrekt/beabsichtigt NULL (score=0),
-      // kein Speicher-/Mapping-Fehler. Ohne sichtbaren Grund sieht das aber
-      // wie ein Bug aus, daher hier der KO-Grund als Tooltip + kleines Icon.
-      render: (r) => (
-        <span className="font-semibold inline-flex items-center gap-1" title={r.ko_reason ?? undefined}>
-          {r.ticker}
-          {r.ko_reason && <span className="text-text-disabled text-[0.65rem]" aria-hidden>ⓘ</span>}
-        </span>
-      ),
+      render: (r) => <span className="font-semibold">{r.ticker}</span>,
     },
     { key: "broker", label: "Broker", render: (r) => brokerBadge(r.broker) },
+    // Grund/Status permanent sichtbar statt nur als Tooltip auf dem Ticker
+    // (siehe statusCell-Docstring) – deckt sowohl KO-Kriterien (rsi_score/
+    // sma_score/etc. sind für diese Zeilen korrekt NULL, kein Bug) als auch
+    // Guardrail-Blocks und "Score zu niedrig" ab.
+    { key: "status", label: "Grund", render: (r) => statusCell(r) },
     { key: "rsi_score", label: "RSI", align: "right", hideOnMobile: true, render: (r) => factorCell(r.rsi_score) },
     { key: "sma_score", label: "SMA", align: "right", hideOnMobile: true, render: (r) => factorCell(r.sma_score) },
     { key: "volume_score", label: "Volumen", align: "right", hideOnMobile: true, render: (r) => factorCell(r.volume_score) },
