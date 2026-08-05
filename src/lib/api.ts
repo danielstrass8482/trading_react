@@ -57,7 +57,16 @@ export type OpenTrade = {
   // MAX_HOLDING_DAYS * MAX_HOLDING_DAYS_TRAILING_MULTIPLIER. Kann rechnerisch
   // <= 0 sein (Exit steht unmittelbar bevor / überfällig), siehe Uebersicht.tsx.
   // Nur Alpaca – Saxo kennt kein Time-Exit-Feature.
+  // Fix 2026-08-05 (UPS-Befund): während einer laufenden Schutzfrist (siehe
+  // time_exit_grace_active) zählt dieser Wert die Handelstage bis zur
+  // Schutzfrist-Deadline, NICHT bis zur ursprünglichen MAX_HOLDING_DAYS-
+  // Grenze (die ist für diese Position bereits überholt).
   time_exit_days_remaining: number;
+  // true, solange eine gewährte Schutzfrist noch läuft (trade.time_exit_grace_used
+  // und die Deadline noch nicht erreicht) – siehe trading_api.get_overview.
+  time_exit_grace_active: boolean;
+  // ISO-Datum der Schutzfrist-Deadline, nur gesetzt wenn time_exit_grace_active.
+  time_exit_grace_deadline: string | null;
 };
 
 export type Overview = {
@@ -523,6 +532,8 @@ export type CombinedOpenPosition = {
   // Nur bei Alpaca-Positionen gesetzt (siehe OpenTrade) – Saxo kennt kein
   // Time-Exit-Feature, siehe Uebersicht.tsx.
   time_exit_days_remaining: number | null;
+  time_exit_grace_active: boolean;
+  time_exit_grace_deadline: string | null;
   created_at: string;
 };
 
@@ -535,6 +546,8 @@ export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: t.mode,
     time_exit_days_remaining: t.time_exit_days_remaining,
+    time_exit_grace_active: t.time_exit_grace_active,
+    time_exit_grace_deadline: t.time_exit_grace_deadline,
     created_at: t.created_at,
   };
 }
@@ -548,6 +561,8 @@ export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
     trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
     time_exit_days_remaining: null,
+    time_exit_grace_active: false,
+    time_exit_grace_deadline: null,
     created_at: t.created_at,
   };
 }

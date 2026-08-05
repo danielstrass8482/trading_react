@@ -25,17 +25,44 @@ function brokerBadge(broker: string | null | undefined) {
   );
 }
 
-// Time-Exit-Countdown-Label (nur Alpaca, siehe CombinedOpenPosition/
-// trading_api.get_overview – time_exit_days_remaining ist bei Saxo-Positionen
-// immer null, Saxo kennt kein Time-Exit-Feature). "Überfällig" statt einer
-// negativen Zahl für den (regulär nicht erwarteten) Fall, dass der Bot eine
-// Position trotz erreichtem Limit noch nicht geschlossen hat.
-function timeExitLabel(t: CombinedOpenPosition): string | null {
+// Time-Exit-Zustand (nur Alpaca, siehe CombinedOpenPosition/
+// trading_api.get_overview – bei Saxo-Positionen immer null, Saxo kennt kein
+// Time-Exit-Feature). Drei klar unterscheidbare Zustände statt nur
+// normal/überfällig (Fix 2026-08-05, UPS-Befund): eine Position in laufender,
+// gültiger Schutzfrist (time_exit_grace_active) ist NICHT überfällig, auch
+// wenn sie die ursprüngliche MAX_HOLDING_DAYS-Grenze bereits überschritten
+// hat – siehe broker.monitor_open_positions Schutzfrist-Zweig.
+type TimeExitState = "normal" | "grace" | "overdue" | null;
+
+function timeExitState(t: CombinedOpenPosition): TimeExitState {
   if (t.time_exit_days_remaining === null) return null;
-  const days = t.time_exit_days_remaining;
-  if (days < 0) return "Time-Exit überfällig";
+  if (t.time_exit_grace_active) return "grace";
+  return t.time_exit_days_remaining < 0 ? "overdue" : "normal";
+}
+
+function timeExitLabel(t: CombinedOpenPosition): string | null {
+  const state = timeExitState(t);
+  if (state === null) return null;
+  const days = t.time_exit_days_remaining!;
+  if (state === "overdue") return "Time-Exit überfällig";
+  if (state === "grace") {
+    const deadline = t.time_exit_grace_deadline
+      ? new Date(t.time_exit_grace_deadline).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })
+      : "?";
+    return `Schutzfrist bis ${deadline} (noch ${days} Handelstag${days === 1 ? "" : "e"})`;
+  }
   const suffix = t.trailing_sl_active ? " (Trailing aktiv)" : "";
   return `Time-Exit in ${days} Handelstag${days === 1 ? "" : "en"}${suffix}`;
+}
+
+// Gold statt Rot/Grau für die Schutzfrist – dieselbe Signalfarbe wie bei
+// "Trailing aktiv" (SL-Feld weiter unten): ein aktiver, adaptiver Schutz,
+// kein Alarmzustand.
+function timeExitColorClass(t: CombinedOpenPosition): string {
+  const state = timeExitState(t);
+  if (state === "overdue") return "text-loss font-medium";
+  if (state === "grace") return "text-gold font-medium";
+  return "text-text-muted";
 }
 
 // Reine Info-Anzeige der Haltedauer für Saxo-Positionen (kein Countdown/
@@ -345,7 +372,7 @@ export default function Uebersicht() {
                       {fmtMenge(t.quantity, 4)} Stück · Score {t.rule_score}/100
                     </div>
                     {timeExitLabel(t) && (
-                      <div className={`text-xs mt-1 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
+                      <div className={`text-xs mt-1 ${timeExitColorClass(t)}`}>
                         {timeExitLabel(t)}
                       </div>
                     )}
@@ -396,7 +423,7 @@ export default function Uebersicht() {
                       {fmtMenge(t.quantity, 4)} Stück
                     </div>
                     {timeExitLabel(t) && (
-                      <div className={`text-[10px] mb-2 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
+                      <div className={`text-[10px] mb-2 ${timeExitColorClass(t)}`}>
                         {timeExitLabel(t)}
                       </div>
                     )}
