@@ -48,14 +48,18 @@ export function fmtZahl(value: number | null | undefined, digits = 2): string {
   return value.toLocaleString("de-DE", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-// Für Mengen/Stückzahlen (Fractional Shares): max. 2 Nachkommastellen in der
-// ANZEIGE (ganze Zahlen ohne Nachkommastellen, Bruchteile gerundet auf 2) –
+// Für Mengen/Stückzahlen (Fractional Shares): max. `digits` Nachkommastellen
+// in der ANZEIGE (ganze Zahlen ohne Nachkommastellen, Bruchteile gerundet) –
 // die zugrunde liegende Precision (Alpaca liefert bis zu 6 Nachkommastellen)
 // bleibt in DB/Berechnungen unverändert, hier wird nur für die Darstellung
-// gerundet (z.B. 0.3274 -> "0,33").
-export function fmtMenge(value: number | null | undefined): string {
+// gerundet (z.B. 0.3274 -> "0,33" bei digits=2). Default bleibt 2 (Handels-
+// historie/sonstige Call-Sites unverändert) – die Positionskarte in
+// Uebersicht.tsx übergibt bewusst 4, damit Eingesetzt/Aktueller-Wert-Betrag
+// und die angezeigte Stückzahl bei Fractional Shares nachvollziehbar
+// zusammenpassen (0,46 Stück rundete den Unterschied vorher weg).
+export function fmtMenge(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) return "–";
-  return value.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return value.toLocaleString("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: digits });
 }
 
 export function gainLossClass(value: number | null | undefined): string {

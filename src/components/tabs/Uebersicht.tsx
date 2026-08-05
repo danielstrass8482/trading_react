@@ -306,6 +306,13 @@ export default function Uebersicht() {
               const slLabel = t.trailing_sl_active ? "TSL" : "SL";
               const slValue = fmtMoney(t.trailing_sl_active && t.trailing_sl_price != null ? t.trailing_sl_price : t.stop_loss, t.currency);
               const scorePct = Math.min(100, Math.max(0, t.rule_score));
+              // Aktueller Wert aus Eingesetzt + unrealisiertem P&L (bereits
+              // vom Backend berechnet, siehe unrealized_pnl oben) – KEINE neue
+              // Berechnung (quantity * current_price würde bei fractional
+              // shares wegen Rundung leicht abweichen), nur eine zweite
+              // Darstellung derselben Zahl, damit sie neben "Eingesetzt"
+              // nachvollziehbar ist.
+              const currentValue = t.capital_used + t.unrealized_pnl;
               return (
                 <div key={`${t.broker}-${t.ticker}`}>
                   {/* Desktop: kompakte Zeile */}
@@ -332,7 +339,10 @@ export default function Uebersicht() {
                       <div>TP: {fmtMoney(t.take_profit, t.currency)}</div>
                     </div>
                     <div className="text-xs text-text-muted mt-1.5">
-                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück · Score {t.rule_score}/100
+                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} → Aktueller Wert: {fmtMoney(currentValue, t.currency)}
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      {fmtMenge(t.quantity, 4)} Stück · Score {t.rule_score}/100
                     </div>
                     {timeExitLabel(t) && (
                       <div className={`text-xs mt-1 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
@@ -379,8 +389,11 @@ export default function Uebersicht() {
                       </div>
                     </div>
 
+                    <div className="text-[10px] text-text-muted mb-1">
+                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} → Aktueller Wert: {fmtMoney(currentValue, t.currency)}
+                    </div>
                     <div className="text-[10px] text-text-muted mb-2">
-                      Eingesetzt: {fmtMoney(t.capital_used, t.currency)} · {fmtMenge(t.quantity)} Stück
+                      {fmtMenge(t.quantity, 4)} Stück
                     </div>
                     {timeExitLabel(t) && (
                       <div className={`text-[10px] mb-2 ${t.time_exit_days_remaining! < 0 ? "text-loss font-medium" : "text-text-muted"}`}>
