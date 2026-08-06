@@ -25,13 +25,15 @@ function brokerBadge(broker: string | null | undefined) {
   );
 }
 
-// Time-Exit-Zustand (nur Alpaca, siehe CombinedOpenPosition/
-// trading_api.get_overview – bei Saxo-Positionen immer null, Saxo kennt kein
-// Time-Exit-Feature). Drei klar unterscheidbare Zustände statt nur
-// normal/überfällig (Fix 2026-08-05, UPS-Befund): eine Position in laufender,
-// gültiger Schutzfrist (time_exit_grace_active) ist NICHT überfällig, auch
-// wenn sie die ursprüngliche MAX_HOLDING_DAYS-Grenze bereits überschritten
-// hat – siehe broker.monitor_open_positions Schutzfrist-Zweig.
+// Time-Exit-Zustand (seit der Time-Exit-Familie für Saxo bei beiden Brokern
+// gesetzt, siehe CombinedOpenPosition/trading_api.get_overview bzw.
+// trading_api_saxo.get_overview). Drei klar unterscheidbare Zustände statt
+// nur normal/überfällig: eine Position in laufender, gültiger Schutzfrist
+// (time_exit_grace_active) ist NICHT überfällig, auch wenn sie die
+// ursprüngliche MAX_HOLDING_DAYS-Grenze bereits überschritten hat – siehe
+// broker.monitor_open_positions bzw. broker_saxo._check_time_exit
+// Schutzfrist-Zweig. Bei Saxo von Anfang an grace-aware gebaut (bei Alpaca
+// war das ein nachträglicher Fix, 2026-08-05, UPS-Befund).
 type TimeExitState = "normal" | "grace" | "overdue" | null;
 
 function timeExitState(t: CombinedOpenPosition): TimeExitState {
@@ -65,9 +67,9 @@ function timeExitColorClass(t: CombinedOpenPosition): string {
   return "text-text-muted";
 }
 
-// Reine Info-Anzeige der Haltedauer für Saxo-Positionen (kein Countdown/
-// Ablaufdatum wie beim Alpaca Time-Exit oben – Saxo kennt kein Time-Exit-
-// Feature, siehe Modul-Docstring von CombinedOpenPosition).
+// Zusätzliche Info-Anzeige des exakten Entry-Datums für Saxo-Positionen,
+// ergänzend zum Time-Exit-Countdown oben (der zeigt nur die verbleibenden
+// Handelstage, kein Datum).
 function holdingDurationLabel(t: CombinedOpenPosition): string | null {
   if (t.broker !== "saxo") return null;
   const entryDate = new Date(t.created_at);

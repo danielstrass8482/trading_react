@@ -56,7 +56,8 @@ export type OpenTrade = {
   // MAX_HOLDING_DAYS ohne aktiven Trailing-SL, sonst die harte Obergrenze
   // MAX_HOLDING_DAYS * MAX_HOLDING_DAYS_TRAILING_MULTIPLIER. Kann rechnerisch
   // <= 0 sein (Exit steht unmittelbar bevor / überfällig), siehe Uebersicht.tsx.
-  // Nur Alpaca – Saxo kennt kein Time-Exit-Feature.
+  // Seit der Time-Exit-Familie für Saxo (Alpaca-Parität) auch dort gesetzt,
+  // siehe SaxoOpenTrade.
   // Fix 2026-08-05 (UPS-Befund): während einer laufenden Schutzfrist (siehe
   // time_exit_grace_active) zählt dieser Wert die Handelstage bis zur
   // Schutzfrist-Deadline, NICHT bis zur ursprünglichen MAX_HOLDING_DAYS-
@@ -109,6 +110,15 @@ export type SaxoOpenTrade = {
   unrealized_pnl: number;
   unrealized_pnl_pct: number;
   broker: "saxo";
+  // Seit der Time-Exit-Familie für Saxo (Alpaca-Parität, broker_saxo.
+  // _check_time_exit) – Bedeutung identisch zu OpenTrade, siehe dortige
+  // Kommentare. Bei Saxo wird der Stop broker-seitig als echte Order
+  // nachgezogen (replace_stop_order), nicht nur als DB-Wert wie bei Alpaca.
+  trailing_sl_active: boolean;
+  trailing_sl_price: number | null;
+  time_exit_days_remaining: number;
+  time_exit_grace_active: boolean;
+  time_exit_grace_deadline: string | null;
 };
 
 export type SaxoOverview = {
@@ -529,8 +539,8 @@ export type CombinedOpenPosition = {
   trailing_sl_active: boolean;
   trailing_sl_price: number | null;
   mode: TradingMode;
-  // Nur bei Alpaca-Positionen gesetzt (siehe OpenTrade) – Saxo kennt kein
-  // Time-Exit-Feature, siehe Uebersicht.tsx.
+  // Seit der Time-Exit-Familie für Saxo (Alpaca-Parität) bei beiden Brokern
+  // gesetzt, siehe OpenTrade/SaxoOpenTrade.
   time_exit_days_remaining: number | null;
   time_exit_grace_active: boolean;
   time_exit_grace_deadline: string | null;
@@ -559,10 +569,10 @@ export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
     stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
     capital_used: t.capital_used_eur,
     rule_score: t.rule_score, unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
-    trailing_sl_active: false, trailing_sl_price: null, mode: "LIVE",
-    time_exit_days_remaining: null,
-    time_exit_grace_active: false,
-    time_exit_grace_deadline: null,
+    trailing_sl_active: t.trailing_sl_active, trailing_sl_price: t.trailing_sl_price, mode: "LIVE",
+    time_exit_days_remaining: t.time_exit_days_remaining,
+    time_exit_grace_active: t.time_exit_grace_active,
+    time_exit_grace_deadline: t.time_exit_grace_deadline,
     created_at: t.created_at,
   };
 }
