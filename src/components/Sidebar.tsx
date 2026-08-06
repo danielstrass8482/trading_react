@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { api, Overview, SaxoOverview, BotConfigEntry, fmtGuardrailValue } from "@/lib/api";
+import { api, Overview, SaxoOverview, BotConfigEntry, fmtGuardrailValue, PauseStatus, PauseReason } from "@/lib/api";
 import { logout } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
@@ -59,6 +59,41 @@ function BrokerLabel({ name }: { name: string }) {
   );
 }
 
+// Pause-Sichtbarkeit (2026-08-06, Alpaca+Saxo identisch, siehe
+// broker.get_pause_status/broker_saxo.get_pause_status): deckt sowohl das
+// bereits bestehende Tagesverlustlimit als auch den neuen Verlustserie-
+// Cooldown ab – vorher gab es dafür in der UI überhaupt keine Anzeige, ein
+// pausierter Bot wirkte identisch zu einem Bot ohne passende Kandidaten.
+function pauseReasonText(r: PauseReason): string {
+  if (r.reason === "daily_loss_limit") {
+    return "Tagesverlust-Limit erreicht – pausiert bis manueller Reset";
+  }
+  const until = r.until
+    ? new Date(r.until).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+    : "?";
+  return `${r.consecutive_losses ?? "?"} Verluste in Folge – pausiert bis ${until} Uhr`;
+}
+
+function PauseBadge({ status }: { status?: PauseStatus }) {
+  if (!status?.paused) return null;
+  return (
+    <span className="text-[0.65rem] font-semibold px-1.5 py-0.5 rounded-btn bg-loss/20 text-loss">
+      Pausiert
+    </span>
+  );
+}
+
+function PauseDetail({ status }: { status?: PauseStatus }) {
+  if (!status?.paused) return null;
+  return (
+    <div className="mt-0.5 space-y-0.5">
+      {status.reasons.map((r, i) => (
+        <div key={i} className="text-loss text-[0.68rem]">{pauseReasonText(r)}</div>
+      ))}
+    </div>
+  );
+}
+
 function BrokerStatus({
   overview, saxoOverview, cfg, saxoCfg,
 }: {
@@ -81,12 +116,14 @@ function BrokerStatus({
                   Drain
                 </span>
               )}
+              <PauseBadge status={overview?.pause_status} />
               {overview?.trading_mode && <ModeBadge mode={overview.trading_mode} />}
             </div>
           </div>
           <div className="text-text-muted font-figures mt-0.5">
             Konto: {overview ? `$${overview.portfolio_value.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {alpacaOpen}
           </div>
+          <PauseDetail status={overview?.pause_status} />
         </div>
         <div>
           <div className="flex items-center justify-between">
@@ -97,6 +134,7 @@ function BrokerStatus({
                   Drain
                 </span>
               )}
+              <PauseBadge status={saxoOverview?.pause_status} />
               {/* Saxo-Bot kennt bewusst nur LIVE (kein Paper-Modus, siehe
                   SaxoOverview/fromSaxoOpenTrade in api.ts). */}
               <ModeBadge mode="LIVE" />
@@ -105,6 +143,7 @@ function BrokerStatus({
           <div className="text-text-muted font-figures mt-0.5">
             Konto: {saxoOverview ? `€${saxoOverview.portfolio_value_eur.toLocaleString("de-DE", { maximumFractionDigits: 0 })}` : "…"} · Offene Pos: {saxoOverview?.open_trades.length ?? "…"}
           </div>
+          <PauseDetail status={saxoOverview?.pause_status} />
         </div>
       </div>
     </div>

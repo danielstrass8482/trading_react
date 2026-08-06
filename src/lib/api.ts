@@ -70,6 +70,24 @@ export type OpenTrade = {
   time_exit_grace_deadline: string | null;
 };
 
+// Pause-Sichtbarkeit (2026-08-06, für beide Broker identisch, siehe
+// broker.get_pause_status / broker_saxo.get_pause_status): fasst das
+// bereits bestehende Tagesverlustlimit UND den neuen Verlustserie-Cooldown
+// zusammen – beide können gleichzeitig aktiv sein (reasons-Array). Das
+// Tagesverlustlimit hat bewusst kein "until" (null): die Freigabe erfordert
+// einen manuellen Reset im Dashboard, während der Verlustserie-Cooldown
+// automatisch nach Ablauf von until wieder freigibt.
+export type PauseReason = {
+  reason: "daily_loss_limit" | "loss_streak_cooldown";
+  until: string | null;
+  consecutive_losses?: number;
+};
+
+export type PauseStatus = {
+  paused: boolean;
+  reasons: PauseReason[];
+};
+
 export type Overview = {
   // Gesamt-Kontowert (cash + long_market_value) – broker-live von Alpaca
   // wenn erreichbar, sonst yfinance-Näherung (siehe trading_api.get_overview).
@@ -87,6 +105,7 @@ export type Overview = {
   vix: number;
   market_regime: MarketRegime;
   trading_mode: TradingMode;
+  pause_status: PauseStatus;
 };
 
 // Saxo-Bot (trading_bot_saxo-Repo, eigener Prozess/Port 8505, ueber
@@ -139,6 +158,7 @@ export type SaxoOverview = {
   // (siehe broker_saxo.get_fx_rate_to_eur) - noetig um Alpacas USD-Wert und
   // ggf. GBP-Saxo-Trades zu einer EUR-Naeherung zu kombinieren.
   fx_rates_to_eur: Record<string, number>;
+  pause_status: PauseStatus;
 };
 
 export type DailySnapshot = {
