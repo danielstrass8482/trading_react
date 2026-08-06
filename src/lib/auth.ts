@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 export type AuthUser = { id: number; name: string; email: string | null; rolle: string };
 
 // Der JWT liegt seit Security Schritt 2 NUR noch in einem HttpOnly-Cookie, das
@@ -53,6 +55,22 @@ export const getUser = (): AuthUser | null => {
   const u = sessionStorage.getItem("user");
   return u ? JSON.parse(u) : null;
 };
+
+// Hydration-sicherer Ersatz für `getUser()?.rolle === "admin"` (identisches
+// Pattern wie portfolio_react/src/lib/auth.ts – gleicher rolle-Claim, gleiche
+// portfolio_os-Quelle). Owner-only-Backend-Endpoints (require_owner() in
+// trading_api.py, siehe z.B. /api/capital-allocations, /api/bot-config/preset)
+// gelten nur für Daniel (DEFAULT_USER_ID) – dessen Account hat "admin" als
+// rolle. Wird genutzt, um Trading-Bot-Kontrollen, die für andere eingeloggte
+// Nutzer ohnehin serverseitig mit 403 abgelehnt werden, im UI gar nicht erst
+// als (scheinbar funktionierende) Editier-Oberfläche anzuzeigen.
+const noopSubscribe = () => () => {};
+export const useIsAdmin = (): boolean =>
+  useSyncExternalStore(
+    noopSubscribe,
+    () => getUser()?.rolle === "admin",
+    () => false
+  );
 
 // Fragt den Server statt ein (mittlerweile nicht mehr existentes) lokales
 // Token zu prüfen – das Cookie ist für JS ohnehin unsichtbar (HttpOnly).

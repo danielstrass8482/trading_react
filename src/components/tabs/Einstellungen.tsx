@@ -10,6 +10,7 @@ import {
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
 import { fmtPct, fmtUsd, fmtMoney, gainLossClass } from "@/lib/format";
+import { useIsAdmin } from "@/lib/auth";
 
 type BrokerKey = "alpaca" | "saxo";
 
@@ -107,6 +108,24 @@ function InfoTooltip({ text }: { text: string }) {
                    rounded p-2 text-xs text-text-muted max-w-48 w-48 shadow-lg"
       >
         {text}
+      </div>
+    </div>
+  );
+}
+
+// Ersatz für PresetsSection/CapitalAllocationSection bei Nicht-Owner-Nutzern
+// (siehe require_owner() in trading_api.py – /api/bot-config/preset und
+// /api/capital-allocations sind bewusst Owner-only, kein Multi-Tenant-Konzept
+// für diese beiden Features). Vorher wurde die volle Editier-Oberfläche
+// trotzdem gerendert und lief bei jeder Aktion in ein stilles 403 – rote
+// Fehlermeldungen + dauerhaft hängende "…"-Platzhalter wirkten wie ein
+// kaputtes Produkt statt wie eine bewusste Einschränkung.
+function CentrallyManagedNotice({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">{title}</h3>
+      <div className="bg-bg-card border border-border rounded-card px-4 py-4 text-sm text-text-muted">
+        {description}
       </div>
     </div>
   );
@@ -411,7 +430,16 @@ function GuardrailCard({
   );
 }
 
+// Erklärt, dass "Live-Handel" den Broker-Modus meint (echtes Geld statt Paper
+// Trading), NICHT den Verbindungsstatus des jeweils eingeloggten Nutzers zu
+// diesem Broker – vorher stand hier nur "Status: LIVE ✅", was wie eine
+// geprüfte, nutzerspezifische Verbindung aussah, obwohl der Text komplett
+// statisch ist.
+const LIVE_MODE_TOOLTIP =
+  "Bedeutet: echtes Geld, kein Paper-Trading. Sagt nichts darüber aus, ob DEIN Account mit diesem Broker verbunden ist.";
+
 function BrokerConfigSection({ config }: { config: Record<string, string> }) {
+  const isAdmin = useIsAdmin();
   const queryClient = useQueryClient();
 
   const { data: overview } = useQuery({
@@ -474,8 +502,12 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
             <div className="font-medium">Alpaca Markets</div>
             <div className="text-xs text-text-muted mt-0.5">US-Aktien · Fractional Shares · Paper Trading verfügbar</div>
             <div className="text-xs mt-1.5 flex items-center gap-3">
-              <span className="text-gain font-medium">Status: LIVE ✅</span>
-              <span className="text-text-muted font-figures">Konto: {overview ? fmtUsd(overview.portfolio_value, 0) : "…"}</span>
+              <span className="text-gain font-medium flex items-center gap-1">
+                Modus: Live-Handel <InfoTooltip text={LIVE_MODE_TOOLTIP} />
+              </span>
+              <span className="text-text-muted font-figures">
+                Konto: {isAdmin ? (overview ? fmtUsd(overview.portfolio_value, 0) : "…") : "–"}
+              </span>
             </div>
           </div>
         </label>
@@ -490,8 +522,12 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
             <div className="font-medium">Saxo Bank</div>
             <div className="text-xs text-text-muted mt-0.5">Weltweit · US + EU + Asien · läuft parallel zu Alpaca (eigener Prozess)</div>
             <div className="text-xs mt-1.5 flex items-center gap-3">
-              <span className="text-gain font-medium">Status: LIVE ✅</span>
-              <span className="text-text-muted font-figures">Konto: {saxoOverview ? fmtMoney(saxoOverview.portfolio_value_eur, "EUR", 0) : "…"}</span>
+              <span className="text-gain font-medium flex items-center gap-1">
+                Modus: Live-Handel <InfoTooltip text={LIVE_MODE_TOOLTIP} />
+              </span>
+              <span className="text-text-muted font-figures">
+                Konto: {isAdmin ? (saxoOverview ? fmtMoney(saxoOverview.portfolio_value_eur, "EUR", 0) : "…") : "–"}
+              </span>
             </div>
           </div>
         </div>
@@ -738,6 +774,7 @@ function LearningProposalsSection() {
 }
 
 export default function Einstellungen() {
+  const isAdmin = useIsAdmin();
   const [broker, setBroker] = useState<BrokerKey>("alpaca");
   const apiPrefix = broker === "saxo" ? "/api/saxo" : "/api";
   const guardrailKeys = broker === "saxo" ? SAXO_GUARDRAIL_KEYS : ALPACA_GUARDRAIL_KEYS;
@@ -798,16 +835,32 @@ export default function Einstellungen() {
           const config = Object.fromEntries(configList.map((c) => [c.key, c.value]));
           return (
             <>
-              {broker === "alpaca" && <PresetsSection config={config} />}
+              {broker === "alpaca" && (
+                isAdmin ? (
+                  <PresetsSection config={config} />
+                ) : (
+                  <CentrallyManagedNotice
+                    title="Risiko-Presets"
+                    description="Die Risiko-Presets werden zentral verwaltet und sind für deinen Account nicht verfügbar."
+                  />
+                )
+              )}
 
-              <CapitalAllocationSection
-                apiPrefix={apiPrefix}
-                queryKeyPrefix={broker}
-                currency={capitalCurrency}
-                totalCapital={totalCapital}
-                freeCapital={liveCash}
-                investedCapital={investedCapital}
-              />
+              {isAdmin ? (
+                <CapitalAllocationSection
+                  apiPrefix={apiPrefix}
+                  queryKeyPrefix={broker}
+                  currency={capitalCurrency}
+                  totalCapital={totalCapital}
+                  freeCapital={liveCash}
+                  investedCapital={investedCapital}
+                />
+              ) : (
+                <CentrallyManagedNotice
+                  title="Kapital-Einstellungen"
+                  description="Die Kapital-Aufteilung (Bot-Anteil %) sowie das Gesamt-Kapitallimit werden zentral verwaltet und sind für deinen Account nicht editierbar."
+                />
+              )}
 
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">
