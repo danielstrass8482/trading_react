@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart2, TrendingUp, TrendingDown, Minus, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
+import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { api, Overview, SaxoOverview, BotConfigEntry, fmtGuardrailValue, PauseStatus, PauseReason } from "@/lib/api";
+import { api, Overview, SaxoOverview, BotConfigEntry, PauseStatus, PauseReason } from "@/lib/api";
 import { logout } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
@@ -27,17 +27,12 @@ const BOTTOM_NAV_ITEMS: { key: TabKey | "mehr"; label: string; icon: React.Compo
   { key: "mehr", label: "Mehr", icon: Menu },
 ];
 
-const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
-  bullish: { icon: TrendingUp, label: "BULLISH" },
-  bearish: { icon: TrendingDown, label: "BEARISH" },
-  neutral: { icon: Minus, label: "NEUTRAL" },
-};
-
-// Gemeinsames Badge fuer den Trading-Modus (LIVE/PAPER) – dieselbe
-// Farb-Zuordnung wie das "Bot-Status"-Badge weiter oben in der Sidebar
-// (bg-live/text-live fuer LIVE, bg-paper/text-paper fuer PAPER), damit
-// Alpaca und Saxo optisch dasselbe Muster nutzen statt vorher Alpaca als
-// unauffaelligen Klartext neben dem Namen und Saxo als eigenstaendige Pille.
+// Gemeinsames Badge fuer den Trading-Modus (LIVE/PAPER), genutzt in der
+// Broker-Zeile unten (bg-live/text-live fuer LIVE, bg-paper/text-paper fuer
+// PAPER) – seit 2026-08-06 die EINZIGE Live/Paper-Anzeige in der Desktop-
+// Sidebar (die zuvor redundante "Bot-Status"-Karte mit eigenem Badge wurde
+// entfernt, siehe unten). Auf Mobile zeigt MobileTopbar.tsx unabhängig
+// davon denselben Status.
 function ModeBadge({ mode }: { mode: string }) {
   const isLive = mode === "LIVE";
   return (
@@ -183,82 +178,56 @@ export default function Sidebar({
 
   const cfg = Object.fromEntries((config ?? []).map((c) => [c.key, c.value]));
   const saxoCfg = Object.fromEntries((saxoConfig ?? []).map((c) => [c.key, c.value]));
-  const isLive = overview?.trading_mode === "LIVE";
   const [sheetOpen, setSheetOpen] = useState(false);
 
   return (
     <>
-    <aside className="hidden md:flex md:flex-col w-64 shrink-0 bg-bg-sidebar border-r border-border min-h-screen px-4 py-6">
-      <div className="mb-8 px-2">
+    {/* FIX 2026-08-06: aside war vorher min-h-screen (wächst mit dem Inhalt
+        über den Viewport hinaus) statt h-screen+sticky (fixe Höhe) - bei viel
+        Sidebar-Inhalt (z.B. mehrere Pause-Hinweise in BrokerStatus) wurde
+        dadurch der Logout-Button unten aus dem sichtbaren Bereich gedrängt.
+        Jetzt: aside hat immer exakt Viewport-Höhe, NUR der mittlere Bereich
+        (Nav+Marktzeiten+Broker) scrollt bei Bedarf intern - Logo oben und
+        Logout unten bleiben immer sichtbar, unabhängig vom Inhalt dazwischen. */}
+    <aside className="hidden md:flex md:flex-col w-64 shrink-0 bg-bg-sidebar border-r border-border h-screen sticky top-0 px-4 py-6">
+      <div className="mb-8 px-2 shrink-0">
         <div className="text-xl font-semibold text-gold">AI Trading Bot</div>
         <div className="text-xs text-text-muted mt-0.5">by Portfolio-OS</div>
       </div>
 
-      <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-          const isActive = key === active;
-          return (
-            <button
-              key={key}
-              onClick={() => onSelect(key)}
-              className={`flex items-center gap-3 px-3 py-2 rounded-nav text-sm text-left transition-colors border-l-2 ${
-                isActive
-                  ? "border-l-gold text-gold bg-bg-hover"
-                  : "border-l-transparent text-text-muted hover:text-text-primary hover:bg-bg-hover"
-              }`}
-            >
-              <Icon size={18} strokeWidth={1.5} />
-              {label}
-            </button>
-          );
-        })}
-      </nav>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <nav className="flex flex-col gap-1">
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+            const isActive = key === active;
+            return (
+              <button
+                key={key}
+                onClick={() => onSelect(key)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-nav text-sm text-left transition-colors border-l-2 ${
+                  isActive
+                    ? "border-l-gold text-gold bg-bg-hover"
+                    : "border-l-transparent text-text-muted hover:text-text-primary hover:bg-bg-hover"
+                }`}
+              >
+                <Icon size={18} strokeWidth={1.5} />
+                {label}
+              </button>
+            );
+          })}
+        </nav>
 
-      <div className="mt-auto pt-6 border-t border-border">
-        <div className="px-2 mb-2 text-xs uppercase tracking-wider text-text-muted">Marktzeiten</div>
-        <MarketStatus />
+        <div className="mt-6 pt-6 border-t border-border">
+          <div className="px-2 mb-2 text-xs uppercase tracking-wider text-text-muted">Marktzeiten</div>
+          <MarketStatus />
 
-        <div className="flex items-center justify-between px-2 mb-3 mt-4 pt-4 border-t border-border">
-          <span className="text-xs uppercase tracking-wider text-text-muted">Bot-Status</span>
-          <span
-            className={`text-[0.7rem] font-semibold px-2 py-0.5 rounded-btn flex items-center gap-1 ${
-              isLive ? "bg-live/20 text-live" : "bg-paper/20 text-paper"
-            }`}
-          >
-            ● {overview?.trading_mode ?? "…"}
-          </span>
+          <BrokerStatus overview={overview} saxoOverview={saxoOverview} cfg={cfg} saxoCfg={saxoCfg} />
         </div>
+      </div>
 
-        {overview && config && (
-          <div className="px-2 space-y-1 text-xs text-text-muted font-figures">
-            <div>
-              Max/Trade: {fmtGuardrailValue("MAX_CAPITAL_PER_TRADE", cfg.MAX_CAPITAL_PER_TRADE ?? "0")} | Offene:{" "}
-              {overview.open_trades.length}/{overview.max_open_positions}
-            </div>
-            <div>
-              SL/TP: <span title="ATR-adaptiv – Distanz richtet sich nach der Volatilität des jeweiligen Tickers, kein fester Prozentsatz. Details siehe Einstellungen.">ATR-adaptiv</span>
-            </div>
-            <div className="flex items-center gap-1">
-              Regime:
-              {(() => {
-                const entry = REGIME_LABEL[overview.market_regime];
-                if (!entry) return overview.market_regime;
-                const Icon = entry.icon;
-                return (
-                  <span className="flex items-center gap-1">
-                    <Icon size={12} strokeWidth={1.5} /> {entry.label}
-                  </span>
-                );
-              })()}
-            </div>
-          </div>
-        )}
-
-        <BrokerStatus overview={overview} saxoOverview={saxoOverview} cfg={cfg} saxoCfg={saxoCfg} />
-
+      <div className="shrink-0 pt-4">
         <button
           onClick={logout}
-          className="flex items-center gap-2 text-text-muted hover:text-loss transition-colors text-sm mt-4 px-2"
+          className="flex items-center gap-2 text-text-muted hover:text-loss transition-colors text-sm px-2"
         >
           <LogOut size={14} /> Abmelden
         </button>
@@ -297,31 +266,37 @@ export default function Sidebar({
         onClick={() => setSheetOpen(false)}
       >
         <div
-          className="absolute bottom-0 left-0 right-0 bg-bg-sidebar rounded-t-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
+          className="absolute bottom-0 left-0 right-0 bg-bg-sidebar rounded-t-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] flex flex-col"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4" />
+          <div className="w-10 h-1 bg-border rounded-full mx-auto mb-4 shrink-0" />
 
-          <div className="mb-3 pb-3 border-b border-border">
+          {/* FIX 2026-08-06: analog zur Desktop-Sidebar intern scrollbar
+              (max-h-[85vh] oben + overflow-y-auto hier) statt unbegrenzt zu
+              wachsen - Dokumentation/Abmelden unten bleiben dadurch auch bei
+              künftig mehr Inhalt hier (z.B. Broker-Status) immer erreichbar. */}
+          <div className="flex-1 min-h-0 overflow-y-auto mb-3 pb-3 border-b border-border">
             <div className="px-3 mb-2 text-xs uppercase tracking-wider text-text-muted">Marktzeiten</div>
             <MarketStatus />
           </div>
 
-          <button
-            onClick={() => {
-              onSelect("dokumentation");
-              setSheetOpen(false);
-            }}
-            className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
-          >
-            <BookOpen size={18} strokeWidth={1.5} /> Dokumentation
-          </button>
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-3 text-sm text-loss hover:bg-bg-hover rounded-nav"
-          >
-            <LogOut size={18} strokeWidth={1.5} /> Abmelden
-          </button>
+          <div className="shrink-0">
+            <button
+              onClick={() => {
+                onSelect("dokumentation");
+                setSheetOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
+            >
+              <BookOpen size={18} strokeWidth={1.5} /> Dokumentation
+            </button>
+            <button
+              onClick={logout}
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-loss hover:bg-bg-hover rounded-nav"
+            >
+              <LogOut size={18} strokeWidth={1.5} /> Abmelden
+            </button>
+          </div>
         </div>
       </div>
     )}
