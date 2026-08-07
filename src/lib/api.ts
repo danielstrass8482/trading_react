@@ -210,6 +210,14 @@ export type Benchmark = {
   benchmarks: Record<string, number | null>;
 };
 
+// Saxo-Pendant zu Benchmark (Feature-Paritäts-Fix 2026-08-07, siehe
+// trading_api_saxo.get_benchmark) – liefert bewusst KEIN eigenes
+// "benchmarks" (S&P 500/Nasdaq sind marktweit, kommen nur vom Alpaca-
+// Endpoint). Performance.tsx kombiniert beide Antworten selbst.
+export type SaxoBenchmark = {
+  bot: number | null;
+};
+
 export type ScanLogEntry = {
   id: number;
   scan_date: string;

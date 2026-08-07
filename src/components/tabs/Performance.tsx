@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react";
 import {
-  api, Performance as PerformanceData, Benchmark, TradeHistoryEntry,
+  api, Performance as PerformanceData, Benchmark, SaxoBenchmark, TradeHistoryEntry,
   SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, ScoreBreakdown, fromAlpacaTrade, fromSaxoTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
@@ -43,6 +43,16 @@ const PERIODS = [
   { key: "3m", label: "3M", days: 90 },
   { key: "all", label: "Alles", days: null },
 ] as const;
+
+// Sentinel für den Benchmark-Request bei period="all": die Backends
+// (broker.get_bot_performance / broker_saxo.get_bot_performance_eur)
+// kennen kein explizites "seit Anfang", sondern nutzen einfach den
+// ältesten daily_log/saxo_daily_position_snapshot-Eintrag INNERHALB der
+// letzten `days` Tage als Baseline. Ein Cutoff, der weit vor jedem real
+// existierenden Snapshot liegt, wählt dadurch automatisch den allerersten
+// Snapshot – kein Sonderfall-Handling in den Bots nötig (Fix 2026-08-07,
+// siehe Diagnose "Performance-Vergleich (30 Tage)").
+const ALL_TIME_DAYS = 3650;
 
 const BENCHMARK_COLORS: Record<string, string> = {
   "S&P 500": "var(--color-paper)",
@@ -127,6 +137,21 @@ function fmtAggregate(agg: PnlAggregate): string {
   if (agg.currency && agg.nativeTotal != null) return fmtMoneySigned(agg.nativeTotal, agg.currency);
   if (agg.eurTotal != null) return fmtMoneySigned(agg.eurTotal, "EUR");
   return "–";
+}
+
+// Rekonstruiert den Portfolio-Startwert eines Brokers aus dessen aktuellem
+// (Näherungs-)Wert und der vom jeweiligen Backend gelieferten %-Performance
+// (algebraische Umkehrung von pct = (current-start)/start*100). Nötig, um
+// Alpaca (USD) und Saxo (EUR) im "Performance-Vergleich" zu einer EINZIGEN,
+// wertgewichteten %-Zahl zu kombinieren, OHNE dass die Backends selbst
+// Rohwerte für Fremdwährungs-Kombination liefern müssten – dieselbe Art
+// Näherung wie beim Portfolio-Wert-Chart oben (aktueller FX-Kurs statt
+// historischer Kurse je Snapshot-Tag).
+function reconstructStartValue(currentValue: number | null, pct: number | null): number | null {
+  if (currentValue == null || pct == null) return null;
+  const divisor = 1 + pct / 100;
+  if (Math.abs(divisor) < 1e-9) return null; // pct = -100%, degenerierter Fall
+  return currentValue / divisor;
 }
 
 // Bester/schlechtester Trade: bei Mischwährungen wird zum RANKING auf EUR
@@ -460,6 +485,12 @@ export default function Performance() {
   // Tabelle UND deren Zusammenfassungs-Zeile.
   const [brokerFilter, setBrokerFilter] = useState<(typeof BROKER_FILTERS)[number]["key"]>("alle");
 
+  // Einmal berechnet, von chartData UND dem Benchmark-Request geteilt (Fix
+  // 2026-08-07: der Benchmark-Request war vorher hart auf days=30
+  // verdrahtet und ignorierte diesen Schalter komplett).
+  const periodDef = PERIODS.find((p) => p.key === period)!;
+  const benchmarkDays = periodDef.days ?? ALL_TIME_DAYS;
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["performance"],
     queryFn: () => api.get<PerformanceData>("/api/performance").then((r) => r.data),
@@ -482,9 +513,18 @@ export default function Performance() {
     queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
   });
 
+  // Feature-Paritäts-Fix 2026-08-07: vorher gab es nur den Alpaca-Aufruf
+  // (hart auf days=30), Saxo hatte gar keinen /api/benchmark-Endpoint – die
+  // Karte zeigte deshalb IMMER nur Alpacas Bot-Performance, egal welcher
+  // Broker-Filter oben aktiv war. Beide Aufrufe folgen jetzt außerdem dem
+  // 1W/1M/3M/Alle-Periodenschalter (benchmarkDays) statt einem festen Wert.
   const { data: benchmark } = useQuery({
-    queryKey: ["benchmark"],
-    queryFn: () => api.get<Benchmark>("/api/benchmark", { params: { days: 30 } }).then((r) => r.data),
+    queryKey: ["benchmark", "alpaca", benchmarkDays],
+    queryFn: () => api.get<Benchmark>("/api/benchmark", { params: { days: benchmarkDays } }).then((r) => r.data),
+  });
+  const { data: saxoBenchmark } = useQuery({
+    queryKey: ["benchmark", "saxo", benchmarkDays],
+    queryFn: () => api.get<SaxoBenchmark>("/api/saxo/benchmark", { params: { days: benchmarkDays } }).then((r) => r.data),
   });
 
   // Handelshistorie (offen+geschlossen, beide Broker) – EINZIGE Quelle für
@@ -538,10 +578,43 @@ export default function Performance() {
   const canMergeAll = brokerFilter === "alle" && usdToEur != null;
   const chartCurrency = brokerFilter === "saxo" ? "EUR" : brokerFilter === "alpaca" ? "USD" : (canMergeAll ? "EUR" : "USD");
 
+  // "Performance-Vergleich"-Karte (Fix 2026-08-07): kombiniert Alpacas und
+  // Saxos %-Performance broker-filter-abhängig zu EINER "Dein Bot"-Zahl.
+  // Bei "Alle" ist das eine wertgewichtete Kombination über EUR-Näherungs-
+  // werte (siehe reconstructStartValue), NICHT einfach der Mittelwert der
+  // beiden Prozentsätze – ein kleines Saxo-Depot darf ein großes Alpaca-
+  // Ergebnis nicht 1:1 gleich stark verwässern/verstärken.
+  const alpacaPct = benchmark?.bot ?? null;
+  const saxoPct = saxoBenchmark?.bot ?? null;
+  const alpacaCurrentUsd = data && data.snapshots.length > 0 ? data.snapshots[data.snapshots.length - 1].portfolio_value : null;
+  const saxoCurrentEur = saxoPerf && saxoPerf.snapshots.length > 0 ? saxoPerf.snapshots[saxoPerf.snapshots.length - 1].portfolio_value_eur : null;
+  const alpacaCurrentEur = alpacaCurrentUsd != null && usdToEur != null ? alpacaCurrentUsd * usdToEur : null;
+
+  const combinedBenchmark = useMemo(() => {
+    if (brokerFilter === "alpaca") return { pct: alpacaPct, isApprox: false };
+    if (brokerFilter === "saxo") return { pct: saxoPct, isApprox: false };
+
+    const alpacaStartEur = reconstructStartValue(alpacaCurrentEur, alpacaPct);
+    const saxoStartEur = reconstructStartValue(saxoCurrentEur, saxoPct);
+    if (alpacaStartEur != null && saxoStartEur != null && alpacaCurrentEur != null && saxoCurrentEur != null) {
+      const startSum = alpacaStartEur + saxoStartEur;
+      const currentSum = alpacaCurrentEur + saxoCurrentEur;
+      if (startSum <= 0) return { pct: null, isApprox: false };
+      return { pct: Math.round(((currentSum - startSum) / startSum) * 100 * 100) / 100, isApprox: true };
+    }
+    // Nur ein Broker hat gültige Daten (z.B. Saxo-Historie noch zu kurz,
+    // oder kein aktueller FX-Kurs verfügbar) -> Fallback auf diesen einen.
+    if (alpacaPct != null && saxoCurrentEur == null) return { pct: alpacaPct, isApprox: false };
+    if (saxoPct != null && alpacaCurrentEur == null) return { pct: saxoPct, isApprox: false };
+    return { pct: null, isApprox: false };
+  }, [brokerFilter, alpacaPct, saxoPct, alpacaCurrentEur, saxoCurrentEur]);
+
+  const brokerLabel = brokerFilter === "alpaca" ? "Alpaca" : brokerFilter === "saxo" ? "Saxo" : "Alpaca + Saxo";
+  const periodLabel = periodDef.days ? `${periodDef.days} Tage` : "Alles";
+
   const chartData = useMemo(() => {
     if (!data) return [];
-    const periodDef = PERIODS.find((p) => p.key === period);
-    const slice = <T,>(arr: T[]) => (periodDef?.days ? arr.slice(-periodDef.days) : arr);
+    const slice = <T,>(arr: T[]) => (periodDef.days ? arr.slice(-periodDef.days) : arr);
 
     if (brokerFilter === "alpaca") {
       return slice(data.snapshots).map((s) => ({ date: formatDatum(s.log_date), wert: s.portfolio_value }));
@@ -565,7 +638,7 @@ export default function Performance() {
     for (const s of saxoPerf?.snapshots ?? []) byDate.set(s.log_date, (byDate.get(s.log_date) ?? 0) + s.portfolio_value_eur);
     const mergedChart = Array.from(byDate.entries()).sort((a, b) => a[0].localeCompare(b[0]));
     return slice(mergedChart).map(([log_date, wert]) => ({ date: formatDatum(log_date), wert }));
-  }, [data, saxoPerf, usdToEur, canMergeAll, period, brokerFilter]);
+  }, [data, saxoPerf, usdToEur, canMergeAll, periodDef.days, brokerFilter]);
 
   if (isLoading) {
     return (
@@ -582,7 +655,7 @@ export default function Performance() {
 
   const benchmarkRows = benchmark
     ? [
-        { label: "Dein Bot", pct: benchmark.bot, color: "var(--color-gold)" },
+        { label: "Dein Bot", pct: combinedBenchmark.pct, color: "var(--color-gold)" },
         ...Object.entries(benchmark.benchmarks).map(([name, pct]) => ({
           label: name,
           pct,
@@ -725,11 +798,21 @@ export default function Performance() {
       />
 
       <div className="bg-bg-card border border-border rounded-card px-4 md:px-6 py-4 md:py-5">
-        <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-4">
-          Performance-Vergleich (30 Tage)
+        <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-1">
+          {/* Zeitraum UND einbezogene Broker explizit im Titel (Fix 2026-08-07,
+              siehe Diagnose "Performance-Vergleich (30 Tage)") – vorher stand
+              hier immer "(30 Tage)", obwohl der Wert unabhängig vom Zeitraum-
+              Schalter war UND ausschließlich Alpaca enthielt. */}
+          Performance-Vergleich ({periodLabel} · {brokerLabel})
         </div>
-        {benchmark?.bot === null || benchmark?.bot === undefined ? (
-          <p className="text-text-muted text-sm">Noch nicht genug Historie für einen 30-Tage-Vergleich.</p>
+        {combinedBenchmark.isApprox && (
+          <div className="text-[0.65rem] text-text-disabled mb-3">
+            Näherungswert: Alpaca (USD) + Saxo (EUR) wertgewichtet kombiniert, aktueller USD/EUR-Kurs
+            rückwirkend auf Alpacas Startwert angewendet (wie beim Portfolio-Wert-Chart oben).
+          </div>
+        )}
+        {combinedBenchmark.pct === null ? (
+          <p className="text-text-muted text-sm">Noch nicht genug Historie für diesen Vergleichszeitraum ({periodLabel}).</p>
         ) : (
           <div className="space-y-3">
             {benchmarkRows.map((row) => (
