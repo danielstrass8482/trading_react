@@ -68,23 +68,7 @@ export const getUser = (): AuthUser | null => {
   return cachedUser;
 };
 
-// Hydration-sicherer Ersatz für `getUser()?.rolle === "admin"` (identisches
-// Pattern wie portfolio_react/src/lib/auth.ts – gleicher rolle-Claim, gleiche
-// portfolio_os-Quelle). Owner-only-Backend-Endpoints (require_owner() in
-// trading_api.py, siehe z.B. /api/capital-allocations, /api/bot-config/preset)
-// gelten nur für Daniel (DEFAULT_USER_ID) – dessen Account hat "admin" als
-// rolle. Wird genutzt, um Trading-Bot-Kontrollen, die für andere eingeloggte
-// Nutzer ohnehin serverseitig mit 403 abgelehnt werden, im UI gar nicht erst
-// als (scheinbar funktionierende) Editier-Oberfläche anzuzeigen.
-const noopSubscribe = () => () => {};
-export const useIsAdmin = (): boolean =>
-  useSyncExternalStore(
-    noopSubscribe,
-    () => getUser()?.rolle === "admin",
-    () => false
-  );
-
-// Kleines Pub/Sub, damit useAuthUser() (unten) nach dem asynchronen
+// Kleines Pub/Sub, damit useIsAdmin()/useAuthUser() (unten) nach dem asynchronen
 // /api/auth/me-Fallback einen Re-Render auslösen kann – ein reiner
 // sessionStorage-Read wie bei useIsAdmin meldet sich sonst nie von selbst.
 const userSubscribers = new Set<() => void>();
@@ -119,6 +103,29 @@ const ensureUserLoaded = () => {
     .finally(() => {
       fetchInFlight = null;
     });
+};
+
+// Hydration-sicherer Ersatz für `getUser()?.rolle === "admin"` (identisches
+// Pattern wie portfolio_react/src/lib/auth.ts – gleicher rolle-Claim, gleiche
+// portfolio_os-Quelle). Owner-only-Backend-Endpoints (require_owner() in
+// trading_api.py, siehe z.B. /api/capital-allocations, /api/bot-config/preset)
+// gelten nur für Daniel (DEFAULT_USER_ID) – dessen Account hat "admin" als
+// rolle. Wird genutzt, um Trading-Bot-Kontrollen, die für andere eingeloggte
+// Nutzer ohnehin serverseitig mit 403 abgelehnt werden, im UI gar nicht erst
+// als (scheinbar funktionierende) Editier-Oberfläche anzuzeigen – reine
+// UI-Sichtbarkeit, keine Autorisierungsgrenze (siehe require_owner() serverseitig).
+// Gleicher Subscribe + einmaliger Nachlade-Fallback wie useAuthUser (unten):
+// in einem frischen Tab (URL eingetippt/Lesezeichen) ist die Rolle sonst bis
+// zum nächsten vollen Login unbekannt und admin-gated UI würde kurzzeitig
+// fälschlich als "nicht-admin" gerendert (reines UX-Problem, siehe Audit
+// oben – kein Fall, in dem ein Nicht-Admin dadurch Admin-UI zu sehen bekäme,
+// da der Default hier ohnehin false ist).
+export const useIsAdmin = (): boolean => {
+  const isAdmin = useSyncExternalStore(subscribeUser, () => getUser()?.rolle === "admin", () => false);
+  useEffect(() => {
+    ensureUserLoaded();
+  }, []);
+  return isAdmin;
 };
 
 // Zeigt an, welcher Account gerade eingeloggt ist (Sidebar, in der Nähe von
