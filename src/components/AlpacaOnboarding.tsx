@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle, AlertTriangle } from "lucide-react";
+import { CheckCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import { api, AlpacaConnectResponse, AlpacaStatus } from "@/lib/api";
+import AlpacaOnboardingGuide from "./AlpacaOnboardingGuide";
 
 type Mode = "paper" | "live";
 
@@ -21,6 +22,7 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AlpacaConnectResponse["account"] | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
 
   const connectMutation = useMutation({
     mutationFn: () =>
@@ -89,6 +91,15 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
         />
       </div>
 
+      <button
+        type="button"
+        onClick={() => setShowGuide(true)}
+        className="flex items-center gap-1.5 text-xs text-gold hover:underline"
+      >
+        <HelpCircle size={13} strokeWidth={1.5} />
+        Wo finde ich meinen API-Key?
+      </button>
+
       {mode === "live" && (
         <label className="flex items-center gap-2 text-xs text-text-muted">
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
@@ -105,6 +116,8 @@ function ConnectForm({ mode, onConnected }: { mode: Mode; onConnected: () => voi
       >
         {connectMutation.isPending ? "Verbinde…" : "Verbinden und testen"}
       </button>
+
+      {showGuide && <AlpacaOnboardingGuide onClose={() => setShowGuide(false)} />}
     </div>
   );
 }
