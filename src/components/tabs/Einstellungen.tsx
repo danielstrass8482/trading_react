@@ -31,6 +31,13 @@ const ALPACA_GUARDRAIL_KEYS = [
   "MAX_CAPITAL_PER_TRADE", "MAX_OPEN_POSITIONS", "MAX_TRADES_PER_DAY",
   "DAILY_LOSS_LIMIT_PCT", "MIN_SIGNAL_SCORE", "VIX_PAUSE_THRESHOLD",
   "ATR_MULTIPLIER_SL", "ATR_MULTIPLIER_TP", "MAX_HOLDING_DAYS", "VOLATILE_SEGMENT_PCT", "EARNINGS_BUFFER_DAYS",
+  // Ab hier: Aufgabe "Presets/Kapitalaufteilung/Guardrails pro Nutzer"
+  // (2026-08-08) – für Nicht-Owner-Nutzer automatisch auf die eigenen,
+  // pro-Nutzer verwaltbaren Werte gescoped (siehe get_bot_config_all in
+  // trading_api.py); das `.filter((k) => k in config)` unten unterhalb
+  // rendert für sie ohnehin nur die tatsächlich vorhandene Teilmenge.
+  "TRAILING_ACTIVATION_PCT", "MAX_CONSECUTIVE_LOSSES", "COOLDOWN_HOURS_AFTER_LOSS_STREAK",
+  "MAX_HOLDING_DAYS_TRAILING_MULTIPLIER", "TIME_EXIT_GRACE_DAYS", "ATR_MIN_SL_PCT", "ATR_MAX_SL_PCT",
 ];
 
 const SAXO_GUARDRAIL_KEYS = [
@@ -93,6 +100,13 @@ const GUARDRAIL_TOOLTIPS: Record<string, string> = {
   MAX_HOLDING_DAYS: "Position wird automatisch nach X Handelstagen verkauft. Verhindert totes Kapital in stagnierenden Positionen.",
   VOLATILE_SEGMENT_PCT: "Anteil volatile Wachstumstitel am Portfolio. Rest = stabile Large Caps. 33% = ausgewogen.",
   EARNINGS_BUFFER_DAYS: "Kein Kauf X Tage vor Quartalszahlen. Verhindert Gap-Risiko durch Earnings-Überraschungen.",
+  TRAILING_ACTIVATION_PCT: "Ab diesem Kursgewinn ggü. Entry wird der feste Stop Loss durch einen nachgezogenen Trailing-Stop ersetzt.",
+  MAX_CONSECUTIVE_LOSSES: "Nach so vielen Verlust-Trades in Folge pausiert der Bot automatisch für dich (unabhängig vom Tagesverlustlimit).",
+  COOLDOWN_HOURS_AFTER_LOSS_STREAK: "So lange dauert die automatische Pause nach einer Verlustserie, bevor der Bot für dich wieder startet.",
+  MAX_HOLDING_DAYS_TRAILING_MULTIPLIER: "Harte Obergrenze bei aktivem Trailing-Stop = Max. Haltedauer × dieser Wert.",
+  TIME_EXIT_GRACE_DAYS: "Zusätzliche Handelstage für eine im Plus stehende Position ohne aktiven Trailing-Stop, bevor hart verkauft wird.",
+  ATR_MIN_SL_PCT: "Untergrenze für die Trailing-Stop-Distanz einer offenen Position (verhindert einen zu engen Stop).",
+  ATR_MAX_SL_PCT: "Obergrenze für die Trailing-Stop-Distanz einer offenen Position (verhindert zu viel Gewinn-Preisgabe).",
 };
 
 function InfoTooltip({ text }: { text: string }) {
@@ -114,13 +128,16 @@ function InfoTooltip({ text }: { text: string }) {
   );
 }
 
-// Ersatz für PresetsSection/CapitalAllocationSection bei Nicht-Owner-Nutzern
-// (siehe require_owner() in trading_api.py – /api/bot-config/preset und
-// /api/capital-allocations sind bewusst Owner-only, kein Multi-Tenant-Konzept
-// für diese beiden Features). Vorher wurde die volle Editier-Oberfläche
-// trotzdem gerendert und lief bei jeder Aktion in ein stilles 403 – rote
-// Fehlermeldungen + dauerhaft hängende "…"-Platzhalter wirkten wie ein
-// kaputtes Produkt statt wie eine bewusste Einschränkung.
+// Seit 2026-08-08 nur noch für Saxo genutzt (Kapitalaufteilung dort
+// weiterhin Owner-only, siehe require_owner() in trading_api_saxo.py – Saxo
+// bleibt strukturell single-tenant, kein Multi-Tenant-Umbau in diesem Zug).
+// Für Alpaca sind Presets/Kapitalaufteilung inzwischen für jeden
+// eingeloggten Nutzer nutzbar (require_owner() im trading_bot-Backend durch
+// user_id-Scoping ersetzt, siehe trading_api.py). Ohne dieses Notice-
+// Fallback würde die volle Editier-Oberfläche trotzdem gerendert und liefe
+// bei jeder Aktion in ein stilles 403 – rote Fehlermeldungen + dauerhaft
+// hängende "…"-Platzhalter wirkten wie ein kaputtes Produkt statt wie eine
+// bewusste Einschränkung.
 function CentrallyManagedNotice({ title, description }: { title: string; description: string }) {
   return (
     <div className="space-y-3">
@@ -879,18 +896,19 @@ export default function Einstellungen() {
           const config = Object.fromEntries(configList.map((c) => [c.key, c.value]));
           return (
             <>
-              {broker === "alpaca" && (
-                isAdmin ? (
-                  <PresetsSection config={config} />
-                ) : (
-                  <CentrallyManagedNotice
-                    title="Risiko-Presets"
-                    description="Die Risiko-Presets werden zentral verwaltet und sind für deinen Account nicht verfügbar."
-                  />
-                )
-              )}
+              {/* Presets + Kapitalaufteilung sind seit 2026-08-08 für JEDEN
+                  eingeloggten Alpaca-Nutzer nutzbar (require_owner() im
+                  Backend durch user_id-Scoping ersetzt, siehe trading_api.py
+                  apply_bot_config_preset/get_capital_allocations_endpoint) -
+                  wirken ausschließlich auf die eigene Config, kein
+                  useIsAdmin()-Gate mehr nötig. Saxo bleibt strukturell
+                  single-tenant (kein Multi-Tenant-Umbau für trading_bot_saxo
+                  in diesem Zug, siehe Bericht) - dort weiterhin isAdmin-
+                  gated, da /api/saxo/capital-allocations unverändert
+                  Owner-only ist. */}
+              {broker === "alpaca" && <PresetsSection config={config} />}
 
-              {isAdmin ? (
+              {broker === "alpaca" || isAdmin ? (
                 <CapitalAllocationSection
                   apiPrefix={apiPrefix}
                   queryKeyPrefix={broker}
@@ -902,7 +920,7 @@ export default function Einstellungen() {
               ) : (
                 <CentrallyManagedNotice
                   title="Kapital-Einstellungen"
-                  description="Die Kapital-Aufteilung (Bot-Anteil %) sowie das Gesamt-Kapitallimit werden zentral verwaltet und sind für deinen Account nicht editierbar."
+                  description="Die Kapital-Aufteilung (Bot-Anteil %) sowie das Gesamt-Kapitallimit werden für Saxo zentral verwaltet und sind für deinen Account nicht editierbar."
                 />
               )}
 

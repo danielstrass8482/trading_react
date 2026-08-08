@@ -638,6 +638,18 @@ export const GUARDRAIL_LABELS: Record<string, { label: string; format: "pct" | "
   MAX_HOLDING_DAYS: { label: "Max. Haltedauer (Tage)", format: "int" },
   VOLATILE_SEGMENT_PCT: { label: "Volatiles Segment (Ziel)", format: "pct" },
   EARNINGS_BUFFER_DAYS: { label: "Earnings-Puffer (Tage)", format: "int" },
+  // Ab hier: Aufgabe "Presets/Kapitalaufteilung/Guardrails pro Nutzer"
+  // (2026-08-08) – vorher nur DB-Keys ohne jede UI (auch für Daniel nicht),
+  // jetzt echte Guardrail-Karten für Owner UND Kunden (siehe DEFAULT_USER_
+  // CONFIG-Docstring in database.py, trading_bot-Repo, für die Begründung
+  // welche Keys pro Nutzer verwaltbar sind).
+  TRAILING_ACTIVATION_PCT: { label: "Trailing-Aktivierung", format: "pct" },
+  MAX_CONSECUTIVE_LOSSES: { label: "Verlustserie-Cooldown: Anzahl Verluste", format: "int" },
+  COOLDOWN_HOURS_AFTER_LOSS_STREAK: { label: "Verlustserie-Cooldown: Dauer (Std.)", format: "int" },
+  MAX_HOLDING_DAYS_TRAILING_MULTIPLIER: { label: "Haltedauer-Obergrenze bei Trailing (×)", format: "int" },
+  TIME_EXIT_GRACE_DAYS: { label: "Schutzfrist für Gewinner (Tage)", format: "int" },
+  ATR_MIN_SL_PCT: { label: "Min. Trailing-Distanz", format: "pct" },
+  ATR_MAX_SL_PCT: { label: "Max. Trailing-Distanz", format: "pct" },
   // Saxo (eigener Kapitaltopf, EUR)
   SAXO_DAILY_LOSS_LIMIT_PCT: { label: "Tagesverlust-Limit", format: "pct" },
   SAXO_MAX_CAPITAL_TOTAL: { label: "Gesamtkapital", format: "eur" },
