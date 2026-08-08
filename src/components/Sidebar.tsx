@@ -4,7 +4,7 @@ import { useState } from "react";
 import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, SaxoOverview, BotConfigEntry, PauseStatus, PauseReason } from "@/lib/api";
-import { logout } from "@/lib/auth";
+import { logout, useAuthUser } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
 export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "einstellungen" | "dokumentation";
@@ -145,6 +145,23 @@ function BrokerStatus({
   );
 }
 
+// Sichtbar machen, welcher Account gerade eingeloggt ist – vorher stand das
+// nirgends im UI, man konnte beim bloßen Blick aufs Dashboard nicht erkennen
+// in welchem Account man unterwegs ist (relevant seit mehrere Nutzer eigene
+// Accounts haben, siehe Multi-Tenant-Feature). Name/E-Mail kommen bereits aus
+// sessionStorage (login() speichert sie dort, siehe auth.ts) – kein
+// zusätzlicher API-Call nötig.
+function UserBadge({ className = "" }: { className?: string }) {
+  const user = useAuthUser();
+  if (!user) return null;
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <div className="text-text-primary text-sm font-medium truncate">{user.name}</div>
+      {user.email && <div className="text-text-muted text-xs truncate">{user.email}</div>}
+    </div>
+  );
+}
+
 export default function Sidebar({
   active,
   onSelect,
@@ -224,7 +241,8 @@ export default function Sidebar({
         </div>
       </div>
 
-      <div className="shrink-0 pt-4">
+      <div className="shrink-0 pt-4 border-t border-border">
+        <UserBadge className="px-2 mb-3" />
         <button
           onClick={logout}
           className="flex items-center gap-2 text-text-muted hover:text-loss transition-colors text-sm px-2"
@@ -296,6 +314,7 @@ export default function Sidebar({
             >
               <LogOut size={18} strokeWidth={1.5} /> Abmelden
             </button>
+            <UserBadge className="px-3 pt-2 pb-1 border-t border-border mt-1" />
           </div>
         </div>
       </div>

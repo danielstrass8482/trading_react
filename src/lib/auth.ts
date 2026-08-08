@@ -50,10 +50,22 @@ export const logout = async () => {
   window.location.href = "/login";
 };
 
+// Cached auf den rohen sessionStorage-String: useAuthUser() (unten) übergibt
+// getUser() direkt als useSyncExternalStore-getSnapshot – die muss bei
+// unverändertem Zustand dieselbe Objekt-Referenz liefern, sonst hält React
+// jeden Aufruf für eine neue Änderung ("getSnapshot should be cached",
+// Endlosschleife). JSON.parse() bei jedem Aufruf hätte das verletzt.
+let cachedUserRaw: string | null = null;
+let cachedUser: AuthUser | null = null;
+
 export const getUser = (): AuthUser | null => {
   if (typeof window === "undefined") return null;
-  const u = sessionStorage.getItem("user");
-  return u ? JSON.parse(u) : null;
+  const raw = sessionStorage.getItem("user");
+  if (raw !== cachedUserRaw) {
+    cachedUserRaw = raw;
+    cachedUser = raw ? JSON.parse(raw) : null;
+  }
+  return cachedUser;
 };
 
 // Hydration-sicherer Ersatz für `getUser()?.rolle === "admin"` (identisches
@@ -70,6 +82,16 @@ export const useIsAdmin = (): boolean =>
     noopSubscribe,
     () => getUser()?.rolle === "admin",
     () => false
+  );
+
+// Zeigt an, welcher Account gerade eingeloggt ist (Sidebar, in der Nähe von
+// "Abmelden") – gleiches hydration-sicheres useSyncExternalStore-Pattern wie
+// useIsAdmin, da sessionStorage erst nach der Hydration verfügbar ist.
+export const useAuthUser = (): AuthUser | null =>
+  useSyncExternalStore(
+    noopSubscribe,
+    getUser,
+    () => null
   );
 
 // Fragt den Server statt ein (mittlerweile nicht mehr existentes) lokales
