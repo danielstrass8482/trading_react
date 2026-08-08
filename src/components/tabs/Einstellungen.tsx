@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info } from "lucide-react";
+import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info, CheckCircle } from "lucide-react";
 import {
   api, BotConfigEntry, EntrySlot, Overview, SaxoOverview, LearningProposal, CapitalAllocations,
-  GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
+  AlpacaStatus, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
 } from "@/lib/api";
 import { TableSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
 import { fmtPct, fmtUsd, fmtMoney, gainLossClass } from "@/lib/format";
 import { useIsAdmin } from "@/lib/auth";
+import AlpacaConnectDialog from "@/components/AlpacaConnectDialog";
 
 type BrokerKey = "alpaca" | "saxo";
 
@@ -459,6 +460,19 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
   });
   const saxoConfig = Object.fromEntries((saxoConfigList ?? []).map((c) => [c.key, c.value]));
 
+  // Gleiche Query wie AlpacaOnboarding.tsx (["alpaca-status"]) – geteilter
+  // Cache, damit ein hier abgeschlossener Connect/Update-Vorgang auch den
+  // Auto-Popup-Status sofort mit aktualisiert (und umgekehrt).
+  const { data: alpacaStatus } = useQuery({
+    queryKey: ["alpaca-status"],
+    queryFn: () => api.get<AlpacaStatus>("/api/user/alpaca-status").then((r) => r.data),
+  });
+  const [showAlpacaDialog, setShowAlpacaDialog] = useState(false);
+  const closeAlpacaDialog = () => {
+    setShowAlpacaDialog(false);
+    queryClient.invalidateQueries({ queryKey: ["alpaca-status"] });
+  };
+
   const activeBroker = config.ACTIVE_BROKER ?? "alpaca";
   const drainMode = (config.ALPACA_DRAIN_MODE ?? "false").toLowerCase() === "true";
   const saxoDrainMode = (saxoConfig.SAXO_DRAIN_MODE ?? "false").toLowerCase() === "true";
@@ -508,6 +522,28 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
               <span className="text-text-muted font-figures">
                 Konto: {isAdmin ? (overview ? fmtUsd(overview.portfolio_value, 0) : "…") : "–"}
               </span>
+            </div>
+
+            {/* Eigener Alpaca-Account des Nutzers (Multi-Tenant-Feature,
+                unabhängig vom oben gewählten ACTIVE_BROKER) – Klicks hier
+                brauchen stopPropagation, sonst löst der Button zusätzlich das
+                Label-Default (Radio-Auswahl von ACTIVE_BROKER) aus. */}
+            <div className="text-xs mt-2 pt-2 border-t border-border/60 flex items-center justify-between gap-2 flex-wrap">
+              {alpacaStatus?.connected ? (
+                <span className="text-gain flex items-center gap-1">
+                  <CheckCircle size={12} strokeWidth={1.5} />
+                  Eigener Account verbunden ({alpacaStatus.mode === "live" ? "Live" : "Paper"})
+                </span>
+              ) : (
+                <span className="text-text-muted">Kein eigener Account verbunden</span>
+              )}
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowAlpacaDialog(true); }}
+                className="text-xs px-2.5 py-1 rounded-btn bg-gold/10 text-gold border border-gold/30 hover:bg-gold/20 transition-colors"
+              >
+                {alpacaStatus?.connected ? "Verbindung aktualisieren" : "Account verbinden"}
+              </button>
             </div>
           </div>
         </label>
@@ -593,6 +629,14 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
 
       {(brokerMutation.isError || drainMutation.isError || saxoDrainMutation.isError) && (
         <p className="text-xs text-loss">Speichern fehlgeschlagen.</p>
+      )}
+
+      {showAlpacaDialog && (
+        <AlpacaConnectDialog
+          context="manage"
+          initialMode={alpacaStatus?.connected ? alpacaStatus.mode : "paper"}
+          onClose={closeAlpacaDialog}
+        />
       )}
     </div>
   );
