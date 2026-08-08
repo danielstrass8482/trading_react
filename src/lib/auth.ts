@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 export type AuthUser = { id: number; name: string; email: string | null; rolle: string };
 
@@ -84,15 +84,54 @@ export const useIsAdmin = (): boolean =>
     () => false
   );
 
+// Kleines Pub/Sub, damit useAuthUser() (unten) nach dem asynchronen
+// /api/auth/me-Fallback einen Re-Render auslösen kann – ein reiner
+// sessionStorage-Read wie bei useIsAdmin meldet sich sonst nie von selbst.
+const userSubscribers = new Set<() => void>();
+const subscribeUser = (cb: () => void) => {
+  userSubscribers.add(cb);
+  return () => userSubscribers.delete(cb);
+};
+const notifyUser = () => userSubscribers.forEach((cb) => cb());
+
+// Fallback für frische Tabs: das HttpOnly-Cookie gilt weiter (wird automatisch
+// mitgeschickt, Login bleibt gültig), aber sessionStorage ist PRO TAB isoliert
+// – öffnet man die App in einem komplett neuen Tab (URL direkt eingetippt
+// oder Lesezeichen, nicht per Link/window.open aus einem bereits eingeloggten
+// Tab), ist es dort leer und die Namens-/E-Mail-Anzeige hätte sonst nichts zu
+// zeigen. Holt die Nutzerdaten dann einmalig über denselben /api/auth/me-
+// Endpoint nach, den auch isLoggedIn() schon nutzt, und cached sie wie ein
+// normaler Login-Vorgang in sessionStorage – kein wiederholter Call bei
+// künftigen Re-Renders/Navigationen in diesem Tab, da getUser() danach den
+// gecachten Wert liefert.
+let fetchInFlight: Promise<void> | null = null;
+const ensureUserLoaded = () => {
+  if (typeof window === "undefined" || getUser() || fetchInFlight) return;
+  fetchInFlight = fetch("/api/auth/me", { credentials: "include" })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((user: AuthUser | null) => {
+      if (user) {
+        sessionStorage.setItem("user", JSON.stringify(user));
+        notifyUser();
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      fetchInFlight = null;
+    });
+};
+
 // Zeigt an, welcher Account gerade eingeloggt ist (Sidebar, in der Nähe von
-// "Abmelden") – gleiches hydration-sicheres useSyncExternalStore-Pattern wie
-// useIsAdmin, da sessionStorage erst nach der Hydration verfügbar ist.
-export const useAuthUser = (): AuthUser | null =>
-  useSyncExternalStore(
-    noopSubscribe,
-    getUser,
-    () => null
-  );
+// "Abmelden") – hydration-sicheres useSyncExternalStore-Pattern wie
+// useIsAdmin (sessionStorage erst nach der Hydration verfügbar), zusätzlich
+// mit echtem Subscribe + einmaligem Nachlade-Fallback für frische Tabs.
+export const useAuthUser = (): AuthUser | null => {
+  const user = useSyncExternalStore(subscribeUser, getUser, () => null);
+  useEffect(() => {
+    ensureUserLoaded();
+  }, []);
+  return user;
+};
 
 // Fragt den Server statt ein (mittlerweile nicht mehr existentes) lokales
 // Token zu prüfen – das Cookie ist für JS ohnehin unsichtbar (HttpOnly).
