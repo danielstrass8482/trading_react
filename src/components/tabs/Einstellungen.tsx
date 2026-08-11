@@ -72,19 +72,31 @@ const PRESETS: {
 }[] = [
   {
     key: "konservativ", icon: Shield, label: "Konservativ",
-    bullets: ["Max $30/Trade", "Max 3 offene Positionen", "ATR × 1.0", "Max 3 Handelstage"],
-    values: { MAX_CAPITAL_PER_TRADE: "30", MAX_OPEN_POSITIONS: "3", ATR_MULTIPLIER_SL: "1.0", ATR_MULTIPLIER_TP: "2.0", MAX_HOLDING_DAYS: "3", VOLATILE_SEGMENT_PCT: "0.0" },
+    bullets: ["Max $30/Trade", "Max 3 offene Positionen", "ATR × 1.0", "Max 3 Handelstage", "Cooldown nach 2 Verlusten (8h)"],
+    values: {
+      MAX_CAPITAL_PER_TRADE: "30", MAX_OPEN_POSITIONS: "3", ATR_MULTIPLIER_SL: "1.0", ATR_MULTIPLIER_TP: "2.0",
+      MAX_HOLDING_DAYS: "3", VOLATILE_SEGMENT_PCT: "0.0",
+      MAX_CONSECUTIVE_LOSSES: "2", COOLDOWN_HOURS_AFTER_LOSS_STREAK: "8.0", TIME_EXIT_GRACE_DAYS: "2",
+    },
   },
   {
     key: "ausgewogen", icon: Activity, label: "Ausgewogen",
-    bullets: ["Max $50/Trade", "Max 5 offene Positionen", "ATR × 1.5", "Max 5 Handelstage"],
-    values: { MAX_CAPITAL_PER_TRADE: "50", MAX_OPEN_POSITIONS: "5", ATR_MULTIPLIER_SL: "1.5", ATR_MULTIPLIER_TP: "3.0", MAX_HOLDING_DAYS: "5", VOLATILE_SEGMENT_PCT: "0.33" },
+    bullets: ["Max $50/Trade", "Max 5 offene Positionen", "ATR × 1.5", "Max 5 Handelstage", "Cooldown nach 3 Verlusten (4h)"],
+    values: {
+      MAX_CAPITAL_PER_TRADE: "50", MAX_OPEN_POSITIONS: "5", ATR_MULTIPLIER_SL: "1.5", ATR_MULTIPLIER_TP: "3.0",
+      MAX_HOLDING_DAYS: "5", VOLATILE_SEGMENT_PCT: "0.33",
+      MAX_CONSECUTIVE_LOSSES: "3", COOLDOWN_HOURS_AFTER_LOSS_STREAK: "4.0", TIME_EXIT_GRACE_DAYS: "3",
+    },
   },
   {
     key: "aggressiv", icon: Zap, label: "Aggressiv",
-    bullets: ["Max $100/Trade", "Max 8 offene Positionen", "ATR × 2.0", "Max 7 Handelstage"],
+    bullets: ["Max $100/Trade", "Max 8 offene Positionen", "ATR × 2.0", "Max 7 Handelstage", "Cooldown nach 5 Verlusten (2h)"],
     warnung: "Höheres Risiko",
-    values: { MAX_CAPITAL_PER_TRADE: "100", MAX_OPEN_POSITIONS: "8", ATR_MULTIPLIER_SL: "2.0", ATR_MULTIPLIER_TP: "4.0", MAX_HOLDING_DAYS: "7", VOLATILE_SEGMENT_PCT: "0.5" },
+    values: {
+      MAX_CAPITAL_PER_TRADE: "100", MAX_OPEN_POSITIONS: "8", ATR_MULTIPLIER_SL: "2.0", ATR_MULTIPLIER_TP: "4.0",
+      MAX_HOLDING_DAYS: "7", VOLATILE_SEGMENT_PCT: "0.5",
+      MAX_CONSECUTIVE_LOSSES: "5", COOLDOWN_HOURS_AFTER_LOSS_STREAK: "2.0", TIME_EXIT_GRACE_DAYS: "5",
+    },
   },
 ];
 
@@ -448,13 +460,20 @@ function GuardrailCard({
   );
 }
 
-// Erklärt, dass "Live-Handel" den Broker-Modus meint (echtes Geld statt Paper
-// Trading), NICHT den Verbindungsstatus des jeweils eingeloggten Nutzers zu
-// diesem Broker – vorher stand hier nur "Status: LIVE ✅", was wie eine
-// geprüfte, nutzerspezifische Verbindung aussah, obwohl der Text komplett
-// statisch ist.
-const LIVE_MODE_TOOLTIP =
-  "Bedeutet: echtes Geld, kein Paper-Trading. Sagt nichts darüber aus, ob DEIN Account mit diesem Broker verbunden ist.";
+// Bugfix (2026-08-11, Zwei-Nutzer-Test): die "Modus:"-Zeile stand vorher für
+// BEIDE Broker-Karten hart auf "Live-Handel", unabhängig vom tatsächlichen
+// Zustand – ein Nutzer mit verbundenem Alpaca-PAPER-Key sah widersprüchlich
+// "Modus: Live-Handel" direkt über "Eigener Account verbunden (Paper)", und
+// die Saxo-Karte zeigte einen grünen "verbunden"-Status samt "Live-Handel"
+// selbst für Nutzer OHNE jede Saxo-Anbindung (Saxo ist strukturell single-
+// tenant, siehe require_owner() in trading_api_saxo.py – nur Daniel/isAdmin
+// hat dort überhaupt einen echten Zustand). Beide Tooltips beschreiben jetzt
+// den tatsächlich angezeigten, dynamischen Zustand statt eines statischen
+// Behauptungstexts.
+const ALPACA_MODE_TOOLTIP =
+  "Paper-Handel = simuliertes Geld, kein echtes Risiko. Live-Handel = echtes Geld. Zeigt den Modus deines eigenen verbundenen Alpaca-Accounts.";
+const SAXO_MODE_TOOLTIP =
+  "Saxo kennt keinen Paper-Modus – jede Verbindung handelt mit echtem Geld. Diese Anzeige gilt nur für den Account, der tatsächlich mit Saxo verbunden ist.";
 
 function BrokerConfigSection({ config }: { config: Record<string, string> }) {
   const isAdmin = useIsAdmin();
@@ -464,9 +483,15 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
     queryKey: ["overview", "alpaca"],
     queryFn: () => api.get<Overview>("/api/overview").then((r) => r.data),
   });
+  // Beide Saxo-Queries nur für Admin (Daniel) aktiviert (Bugfix 2026-08-11,
+  // siehe SAXO_MODE_TOOLTIP-Kommentar oben) – /api/saxo/overview und
+  // /api/saxo/bot-config sind Owner-only (require_owner() in
+  // trading_api_saxo.py), ein Nicht-Admin-Request würde hier immer
+  // garantiert mit 403 fehlschlagen (unnötiger Request + Konsolenfehler).
   const { data: saxoOverview } = useQuery({
     queryKey: ["overview", "saxo"],
     queryFn: () => api.get<SaxoOverview>("/api/saxo/overview").then((r) => r.data),
+    enabled: isAdmin,
   });
   // Eigene, von der Alpaca-config-Prop unabhängige Query – SAXO_DRAIN_MODE
   // lebt in saxo_bot_config (eigener Prozess/Port, siehe trading_api_saxo.py),
@@ -474,6 +499,7 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
   const { data: saxoConfigList } = useQuery({
     queryKey: ["bot-config", "saxo"],
     queryFn: () => api.get<BotConfigEntry[]>("/api/saxo/bot-config").then((r) => r.data),
+    enabled: isAdmin,
   });
   const saxoConfig = Object.fromEntries((saxoConfigList ?? []).map((c) => [c.key, c.value]));
 
@@ -533,9 +559,13 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
             <div className="font-medium">Alpaca Markets</div>
             <div className="text-xs text-text-muted mt-0.5">US-Aktien · Fractional Shares · Paper Trading verfügbar</div>
             <div className="text-xs mt-1.5 flex items-center gap-3">
-              <span className="text-gain font-medium flex items-center gap-1">
-                Modus: Live-Handel <InfoTooltip text={LIVE_MODE_TOOLTIP} />
-              </span>
+              {alpacaStatus?.connected ? (
+                <span className={`font-medium flex items-center gap-1 ${alpacaStatus.mode === "live" ? "text-live" : "text-paper"}`}>
+                  Modus: {alpacaStatus.mode === "live" ? "Live-Handel" : "Paper-Handel"} <InfoTooltip text={ALPACA_MODE_TOOLTIP} />
+                </span>
+              ) : (
+                <span className="text-text-muted font-medium">Nicht verbunden</span>
+              )}
               <span className="text-text-muted font-figures">
                 Konto: {isAdmin ? (overview ? fmtUsd(overview.portfolio_value, 0) : "…") : "–"}
               </span>
@@ -570,14 +600,18 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
             – deshalb reine Status-Anzeige statt eines (nie funktionierenden)
             Radio-Buttons wie vorher. Konsistent zum Sidebar-BrokerStatus-Widget. */}
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-card border border-border">
-          <div className="mt-1 w-3 h-3 rounded-full bg-gain shrink-0" aria-hidden />
+          <div className={`mt-1 w-3 h-3 rounded-full shrink-0 ${isAdmin ? "bg-live" : "bg-text-muted/40"}`} aria-hidden />
           <div className="text-sm">
             <div className="font-medium">Saxo Bank</div>
             <div className="text-xs text-text-muted mt-0.5">Weltweit · US + EU + Asien · läuft parallel zu Alpaca (eigener Prozess)</div>
             <div className="text-xs mt-1.5 flex items-center gap-3">
-              <span className="text-gain font-medium flex items-center gap-1">
-                Modus: Live-Handel <InfoTooltip text={LIVE_MODE_TOOLTIP} />
-              </span>
+              {isAdmin ? (
+                <span className="text-live font-medium flex items-center gap-1">
+                  Modus: Live-Handel <InfoTooltip text={SAXO_MODE_TOOLTIP} />
+                </span>
+              ) : (
+                <span className="text-text-muted font-medium">Nicht verbunden</span>
+              )}
               <span className="text-text-muted font-figures">
                 Konto: {isAdmin ? (saxoOverview ? fmtMoney(saxoOverview.portfolio_value_eur, "EUR", 0) : "…") : "–"}
               </span>
@@ -589,21 +623,31 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
       <div className="bg-bg-card border border-border rounded-card px-4 py-3 flex items-center justify-between">
         <div>
           <div className="text-sm font-medium">Alpaca Drain Mode</div>
-          <div className="text-xs text-text-muted mt-0.5">Keine neuen Alpaca-Käufe – bestehende Positionen laufen aus</div>
+          <div className="text-xs text-text-muted mt-0.5">
+            Keine neuen Alpaca-Käufe – bestehende Positionen laufen aus
+            {!isAdmin && <span className="block mt-0.5 text-text-disabled">Globaler Schalter, nur vom Betreiber änderbar</span>}
+          </div>
         </div>
-        <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
-          <span className={`text-xs font-semibold ${drainMode ? "text-orange-400" : "text-text-muted"}`}>
-            {drainMode ? "AN" : "AUS"}
+        {isAdmin ? (
+          <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
+            <span className={`text-xs font-semibold ${drainMode ? "text-orange-400" : "text-text-muted"}`}>
+              {drainMode ? "AN" : "AUS"}
+            </span>
+            <input
+              type="checkbox" checked={drainMode}
+              disabled={drainMutation.isPending}
+              onChange={(e) => drainMutation.mutate(e.target.checked)}
+            />
+          </label>
+        ) : (
+          <span className="flex items-center gap-2 text-sm shrink-0 opacity-50 cursor-not-allowed" title="Nur vom Betreiber änderbar – dein Account sieht den globalen Zustand nicht">
+            <span className="text-xs font-semibold text-text-muted">–</span>
+            <input type="checkbox" checked={false} disabled readOnly />
           </span>
-          <input
-            type="checkbox" checked={drainMode}
-            disabled={drainMutation.isPending}
-            onChange={(e) => drainMutation.mutate(e.target.checked)}
-          />
-        </label>
+        )}
       </div>
 
-      {drainMode && (
+      {isAdmin && drainMode && (
         <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-card px-3 py-2 flex items-start gap-2">
           <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
           <span>
@@ -618,21 +662,31 @@ function BrokerConfigSection({ config }: { config: Record<string, string> }) {
       <div className="bg-bg-card border border-border rounded-card px-4 py-3 flex items-center justify-between">
         <div>
           <div className="text-sm font-medium">Saxo Drain Mode</div>
-          <div className="text-xs text-text-muted mt-0.5">Keine neuen Saxo-Käufe – bestehende Positionen laufen aus</div>
+          <div className="text-xs text-text-muted mt-0.5">
+            Keine neuen Saxo-Käufe – bestehende Positionen laufen aus
+            {!isAdmin && <span className="block mt-0.5 text-text-disabled">Saxo ist single-tenant, nur vom Betreiber änderbar</span>}
+          </div>
         </div>
-        <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
-          <span className={`text-xs font-semibold ${saxoDrainMode ? "text-orange-400" : "text-text-muted"}`}>
-            {saxoDrainMode ? "AN" : "AUS"}
+        {isAdmin ? (
+          <label className="flex items-center gap-2 text-sm cursor-pointer shrink-0">
+            <span className={`text-xs font-semibold ${saxoDrainMode ? "text-orange-400" : "text-text-muted"}`}>
+              {saxoDrainMode ? "AN" : "AUS"}
+            </span>
+            <input
+              type="checkbox" checked={saxoDrainMode}
+              disabled={saxoDrainMutation.isPending}
+              onChange={(e) => saxoDrainMutation.mutate(e.target.checked)}
+            />
+          </label>
+        ) : (
+          <span className="flex items-center gap-2 text-sm shrink-0 opacity-50 cursor-not-allowed" title="Nur vom Betreiber änderbar – kein Saxo-Zugriff für diesen Account">
+            <span className="text-xs font-semibold text-text-muted">–</span>
+            <input type="checkbox" checked={false} disabled readOnly />
           </span>
-          <input
-            type="checkbox" checked={saxoDrainMode}
-            disabled={saxoDrainMutation.isPending}
-            onChange={(e) => saxoDrainMutation.mutate(e.target.checked)}
-          />
-        </label>
+        )}
       </div>
 
-      {saxoDrainMode && (
+      {isAdmin && saxoDrainMode && (
         <div className="text-xs text-orange-400 bg-orange-500/10 border border-orange-500/30 rounded-card px-3 py-2 flex items-start gap-2">
           <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
           <span>
@@ -947,8 +1001,30 @@ export default function Einstellungen() {
               {broker === "alpaca" && (
                 <>
                   <BrokerConfigSection config={config} />
-                  <EntrySlotsSection />
-                  <LearningProposalsSection />
+                  {/* Bugfix (2026-08-11, Zwei-Nutzer-Test): entry_time_slots
+                      UND ENTRY_LEARNING_MODE sind laut require_owner-
+                      Docstring (trading_api.py) explizit Owner-only – ein
+                      gemeinsamer Zeitplan für den zentralen Signal-Scan,
+                      kein Kunden-Risikoparameter. /api/entry-slots,
+                      /api/settings/entry-learning-mode und
+                      /api/learning-proposals liefern für jeden anderen
+                      Account 403. Vorher wurden EntrySlotsSection/
+                      LearningProposalsSection trotzdem unconditional
+                      gerendert – die Lernmodus-Checkbox sah dadurch für
+                      Nicht-Owner wie ein normales, aber kaputtes Bedienelement
+                      aus (403 beim Speichern, keine Erklärung) statt klar als
+                      "nur Betreiber" gekennzeichnet zu sein. */}
+                  {isAdmin ? (
+                    <>
+                      <EntrySlotsSection />
+                      <LearningProposalsSection />
+                    </>
+                  ) : (
+                    <CentrallyManagedNotice
+                      title="Einstiegszeitpunkte & KI-Lernvorschläge"
+                      description="Der gemeinsame Einstiegszeitplan, der Lernmodus und die KI-Lernvorschläge steuern den zentralen Signal-Scan für alle Nutzer und sind daher nur vom Betreiber änderbar."
+                    />
+                  )}
                 </>
               )}
 
