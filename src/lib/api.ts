@@ -703,6 +703,11 @@ export type PendingConfirmation = {
   signal_timestamp: string;
   expires_at: string;
   broker: string;
+  // Confirm-Tier Chunk 2d (2026-08-11): aktuellster Score aus signal_payload
+  // (siehe trading_api._extract_score) - null falls kein/kaputtes Payload
+  // (z.B. sehr alte Bestandszeilen). Backend liefert /api/pending-
+  // confirmations bereits absteigend sortiert (siehe dortige Docstring).
+  score: number | null;
 };
 
 // Confirm-Tier Chunk 2c (2026-08-11) – Verlauf ALLER Status (nicht nur

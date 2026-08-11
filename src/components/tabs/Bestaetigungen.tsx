@@ -99,12 +99,23 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
           <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-gold/20 text-gold">
             {row.broker.toUpperCase()}
           </span>
+          {/* Score-Anzeige (Confirm-Tier Chunk 2d, Aufgabe Punkt 5) - der
+              Wert wird bei jedem Re-Scan aktualisiert (siehe confirm_
+              execution.update_pending_confirmation), solange der Kandidat
+              über der Schwelle bleibt. Backend liefert die Liste bereits
+              absteigend sortiert (Aufgabe Punkt 6, siehe list_pending_
+              confirmations-Docstring). */}
+          {row.score != null && (
+            <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-paper/20 text-paper font-figures">
+              Score {row.score}
+            </span>
+          )}
         </div>
         <div className="text-xs text-text-muted font-figures mt-1">
-          Menge {row.qty_or_amount} · Preis ${row.signal_price.toFixed(2)} · Signal {formatDatum(row.signal_timestamp)}
+          Menge {row.qty_or_amount} · Preis ${row.signal_price.toFixed(2)} · Aktualisiert {formatDatum(row.signal_timestamp)}
         </div>
         <div className="text-xs text-text-disabled font-figures mt-0.5 flex items-center gap-1">
-          <Clock size={11} /> Läuft ab: {formatDatum(row.expires_at)}
+          <Clock size={11} /> Läuft ab (Handelsschluss): {formatDatum(row.expires_at)}
         </div>
       </div>
       <div className="flex gap-2">
@@ -159,8 +170,10 @@ export default function Bestaetigungen() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["pending-confirmations"],
     queryFn: () => api.get<PendingConfirmation[]>("/api/pending-confirmations").then((r) => r.data),
-    // Läuft nach spätestens ein paar Minuten ab (siehe expires_at) - kurzes
-    // Polling hält die Queue aktuell, ohne dass der Nutzer manuell neu laden muss.
+    // Confirm-Tier Chunk 2d: expires_at ist jetzt der Handelsschluss statt
+    // eines starren 15-Minuten-Fensters, Einträge werden außerdem bei jedem
+    // Entry-Zyklus mit Preis/Score aktualisiert - kurzes Polling hält die
+    // Queue trotzdem aktuell, ohne dass der Nutzer manuell neu laden muss.
     refetchInterval: 30_000,
   });
 
