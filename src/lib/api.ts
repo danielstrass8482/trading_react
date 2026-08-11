@@ -166,6 +166,11 @@ export type DailySnapshot = {
   portfolio_value: number;
   daily_pnl: number;
   trades_count: number;
+  // Kapitalfluss-Verzerrungs-Bugfix Chunk 2 (2026-08-11): null bei Zeilen
+  // vor der TWR-Formel-Umstellung (siehe database.DailyLog-Docstring),
+  // sonst "twr_ex_flows". portfolio_value selbst ist davon unberührt (roher
+  // Depotwert, formelunabhängig immer korrekt) - reine Metadaten.
+  formula_version: string | null;
 };
 
 // Saxo-Pendant zu DailySnapshot – eigener Typ da nur log_date/portfolio_value_eur
@@ -175,6 +180,7 @@ export type DailySnapshot = {
 export type SaxoDailySnapshot = {
   log_date: string;
   portfolio_value_eur: number;
+  formula_version: string | null;
 };
 
 export type SaxoPerformance = {
@@ -208,6 +214,11 @@ export type Performance = {
 export type Benchmark = {
   bot: number | null;
   benchmarks: Record<string, number | null>;
+  // Kapitalfluss-Verzerrungs-Bugfix Chunk 2 (2026-08-11): ISO-Zeitstempel,
+  // ab dem "bot" die korrigierte TWR-Formel nutzt (siehe
+  // trading_shared.performance.FORMULA_DEPLOY_AT) - identisch für Alpaca
+  // und Saxo (beide importieren denselben Wert).
+  formula_deploy_at: string;
 };
 
 // Saxo-Pendant zu Benchmark (Feature-Paritäts-Fix 2026-08-07, siehe
@@ -216,6 +227,7 @@ export type Benchmark = {
 // Endpoint). Performance.tsx kombiniert beide Antworten selbst.
 export type SaxoBenchmark = {
   bot: number | null;
+  formula_deploy_at: string;
 };
 
 export type ScanLogEntry = {

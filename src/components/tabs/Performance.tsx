@@ -147,10 +147,20 @@ function fmtAggregate(agg: PnlAggregate): string {
 // Rohwerte für Fremdwährungs-Kombination liefern müssten – dieselbe Art
 // Näherung wie beim Portfolio-Wert-Chart oben (aktueller FX-Kurs statt
 // historischer Kurse je Snapshot-Tag).
+// Clamp (Kapitalfluss-Verzerrungs-Bugfix Chunk 2, 2026-08-11): algebraisch
+// korrekt, aber numerisch instabil nahe pct=-100% - der Divisor geht gegen 0,
+// der rekonstruierte Startwert explodiert (z.B. pct=-99.9% -> Divisor=0.001
+// -> Startwert = 1000x der aktuelle Wert). Ein einzelner Broker mit einem
+// solchen Extremwert würde die wertgewichtete Kombination komplett dominieren
+// und eine sinnlose "Dein Bot"-Zahl erzeugen, statt sauber auf den anderen
+// Broker zurückzufallen. Schwelle 5% Divisor (= pct <= -95%) statt exakt 0,
+// da der Wert schon deutlich vor der echten Singularität unbrauchbar wird.
+const RECONSTRUCT_MIN_ABS_DIVISOR = 0.05;
+
 function reconstructStartValue(currentValue: number | null, pct: number | null): number | null {
   if (currentValue == null || pct == null) return null;
   const divisor = 1 + pct / 100;
-  if (Math.abs(divisor) < 1e-9) return null; // pct = -100%, degenerierter Fall
+  if (Math.abs(divisor) < RECONSTRUCT_MIN_ABS_DIVISOR) return null; // pct nahe -100%, numerisch instabil
   return currentValue / divisor;
 }
 
@@ -602,15 +612,37 @@ export default function Performance() {
       if (startSum <= 0) return { pct: null, isApprox: false };
       return { pct: Math.round(((currentSum - startSum) / startSum) * 100 * 100) / 100, isApprox: true };
     }
-    // Nur ein Broker hat gültige Daten (z.B. Saxo-Historie noch zu kurz,
-    // oder kein aktueller FX-Kurs verfügbar) -> Fallback auf diesen einen.
-    if (alpacaPct != null && saxoCurrentEur == null) return { pct: alpacaPct, isApprox: false };
-    if (saxoPct != null && alpacaCurrentEur == null) return { pct: saxoPct, isApprox: false };
+    // Nur EIN Broker hat einen brauchbaren Startwert (z.B. Saxo-Historie
+    // noch zu kurz, kein aktueller FX-Kurs verfügbar, ODER der Clamp oben
+    // hat eine der beiden Rekonstruktionen wegen Instabilität nahe -100%
+    // verworfen) -> Fallback auf diesen einen statt komplett auf null zu
+    // fallen.
+    if (alpacaStartEur != null && saxoStartEur == null) return { pct: alpacaPct, isApprox: false };
+    if (saxoStartEur != null && alpacaStartEur == null) return { pct: saxoPct, isApprox: false };
     return { pct: null, isApprox: false };
   }, [brokerFilter, alpacaPct, saxoPct, alpacaCurrentEur, saxoCurrentEur]);
 
   const brokerLabel = brokerFilter === "alpaca" ? "Alpaca" : brokerFilter === "saxo" ? "Saxo" : "Alpaca + Saxo";
   const periodLabel = periodDef.days ? `${periodDef.days} Tage` : "Alles";
+
+  // Kapitalfluss-Verzerrungs-Bugfix Chunk 2 (2026-08-11): "Dein Bot" wird
+  // IMMER frisch mit der korrigierten TWR-Formel berechnet (Backend hat
+  // keinen historisch gespeicherten %-Wert, siehe trading_shared.
+  // performance-Docstring) - der Prozentwert selbst ist also für JEDES
+  // Zeitfenster bereits korrekt, auch wenn es vor dem Fix-Datum beginnt
+  // (Chunk 1 hat die komplette Kapitalfluss-Historie synchronisiert). Damit
+  // das nicht wie ein unerklärter Bruch wirkt, falls das gewählte
+  // Zeitfenster den Umstellungszeitpunkt überspannt, zeigt dieser Hinweis
+  // dezent an WANN umgestellt wurde und dass ältere Rohwerte unangetastet
+  // blieben - keine Warnung vor einer tatsächlichen Inkonsistenz.
+  const formulaDeployAt = benchmark?.formula_deploy_at ?? saxoBenchmark?.formula_deploy_at ?? null;
+  const periodSpansFormulaChange = useMemo(() => {
+    if (!formulaDeployAt) return false;
+    const deployDateStr = formulaDeployAt.slice(0, 10);
+    const relevant = brokerFilter === "saxo" ? (saxoPerf?.snapshots ?? []) : (data?.snapshots ?? []);
+    const sliced = periodDef.days ? relevant.slice(-periodDef.days) : relevant;
+    return sliced.length > 0 && sliced[0].log_date < deployDateStr;
+  }, [formulaDeployAt, periodDef.days, brokerFilter, data, saxoPerf]);
 
   const chartData = useMemo(() => {
     if (!data) return [];
@@ -806,9 +838,16 @@ export default function Performance() {
           Performance-Vergleich ({periodLabel} · {brokerLabel})
         </div>
         {combinedBenchmark.isApprox && (
-          <div className="text-[0.65rem] text-text-disabled mb-3">
+          <div className="text-[0.65rem] text-text-disabled mb-1">
             Näherungswert: Alpaca (USD) + Saxo (EUR) wertgewichtet kombiniert, aktueller USD/EUR-Kurs
             rückwirkend auf Alpacas Startwert angewendet (wie beim Portfolio-Wert-Chart oben).
+          </div>
+        )}
+        {periodSpansFormulaChange && formulaDeployAt && (
+          <div className="text-[0.65rem] text-text-disabled mb-3">
+            Seit {new Date(formulaDeployAt).toLocaleDateString("de-DE")} rechnet die Performance-%
+            Ein-/Auszahlungen korrekt heraus – dieser Wert nutzt für den gesamten gewählten Zeitraum
+            bereits die korrigierte Formel, die zugrundeliegenden Depotwerte blieben unverändert.
           </div>
         )}
         {combinedBenchmark.pct === null ? (
