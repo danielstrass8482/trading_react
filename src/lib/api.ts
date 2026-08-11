@@ -705,8 +705,27 @@ export type PendingConfirmation = {
   broker: string;
 };
 
+// Confirm-Tier Chunk 2c (2026-08-11) – Verlauf ALLER Status (nicht nur
+// PENDING), für die Dashboard-Historie (siehe trading_api.py::/api/pending-
+// confirmations/history).
+export type ConfirmationStatus = "pending" | "confirmed" | "rejected" | "expired" | "failed";
+
+export type ConfirmationHistoryEntry = PendingConfirmation & {
+  status: ConfirmationStatus;
+  failure_reason: string | null;
+  resolved_at: string | null;
+};
+
 export type ConfirmationResolution = {
   ok: boolean;
   message: string;
   trade_id: number | null;
+  // Chunk 2c: Preis-Re-Check - gesetzt, wenn der Live-Preis bei Bestätigung
+  // außerhalb price_tolerance_pct_snapshot lag. Die Zeile bleibt PENDING,
+  // erst ein zweiter Bestätigen-Aufruf mit ack_price=new_price führt zur
+  // Order (siehe Bestaetigungen.tsx).
+  needs_reconfirmation?: boolean;
+  old_price?: number;
+  new_price?: number;
+  deviation_pct?: number;
 };

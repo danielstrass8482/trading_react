@@ -1,41 +1,95 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Check, X } from "lucide-react";
-import { api, PendingConfirmation, ConfirmationResolution } from "@/lib/api";
+import { Clock, Check, X, AlertTriangle } from "lucide-react";
+import { api, PendingConfirmation, ConfirmationResolution, ConfirmationHistoryEntry, ConfirmationStatus } from "@/lib/api";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
 
-// Confirm-Tier Chunk 2b (2026-08-11): Dashboard-Queue-Kanal für
+// Confirm-Tier Chunk 2b+2c (2026-08-11): Dashboard-Queue-Kanal für
 // EXECUTION_MODE='confirm'-Nutzer (siehe database.DEFAULT_USER_CONFIG,
 // Chunk 1/trading_bot-Repo) - Pendant zum Email-Magic-Link
 // (trading_api.py::/api/confirm-execution/{token}, dort ohne Login). Zeigt
 // NUR die eigenen PENDING-Einträge des eingeloggten Nutzers (user_id kommt
 // serverseitig aus dem JWT, siehe trading_api.py::/api/pending-
-// confirmations - niemals aus einem hier mitgeschickten Wert).
+// confirmations - niemals aus einem hier mitgeschickten Wert), plus eine
+// Verlaufs-Sektion aller 5 Status (Chunk 2c).
 function formatDatum(iso: string): string {
   return new Date(iso).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// Chunk 2c: Preis-Re-Check kann statt einer sofortigen Bestätigung ein
+// needs_reconfirmation-Ergebnis liefern (Live-Preis weicht zu stark vom
+// Signalzeitpunkt-Preis ab, siehe trading_api._resolve_confirmation) - der
+// Nutzer sieht dann alten/neuen Preis + Abweichung und muss EXPLIZIT ein
+// zweites Mal bestätigen (Aufgabe Punkt 2), statt dass automatisch zum neuen
+// Preis ausgeführt wird.
 function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved: (msg: string) => void }) {
   const queryClient = useQueryClient();
+  const [reconfirm, setReconfirm] = useState<{ oldPrice: number; newPrice: number; deviationPct: number } | null>(null);
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["pending-confirmations"] });
+    queryClient.invalidateQueries({ queryKey: ["confirmation-history"] });
+  };
 
   const confirmMutation = useMutation({
-    mutationFn: () => api.post<ConfirmationResolution>(`/api/pending-confirmations/${row.id}/confirm`).then((r) => r.data),
+    mutationFn: (ackPrice?: number) =>
+      api
+        .post<ConfirmationResolution>(`/api/pending-confirmations/${row.id}/confirm`, null, {
+          params: ackPrice != null ? { ack_price: ackPrice } : undefined,
+        })
+        .then((r) => r.data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["pending-confirmations"] });
+      if (result.needs_reconfirmation && result.old_price != null && result.new_price != null && result.deviation_pct != null) {
+        setReconfirm({ oldPrice: result.old_price, newPrice: result.new_price, deviationPct: result.deviation_pct });
+        return;
+      }
+      setReconfirm(null);
+      invalidate();
       onResolved(result.message);
     },
   });
   const rejectMutation = useMutation({
     mutationFn: () => api.post<ConfirmationResolution>(`/api/pending-confirmations/${row.id}/reject`).then((r) => r.data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["pending-confirmations"] });
+      invalidate();
       onResolved(result.message);
     },
   });
 
   const busy = confirmMutation.isPending || rejectMutation.isPending;
+
+  if (reconfirm) {
+    return (
+      <div className="bg-bg-card border border-gold/40 rounded-card px-4 py-4 space-y-2">
+        <div className="flex items-center gap-2 font-semibold text-gold">
+          <AlertTriangle size={16} /> {row.ticker}: Preis hat sich geändert
+        </div>
+        <div className="text-xs text-text-muted font-figures">
+          Preis zum Signalzeitpunkt: ${reconfirm.oldPrice.toFixed(2)} → Aktuell: ${reconfirm.newPrice.toFixed(2)}
+          {" "}({reconfirm.deviationPct >= 0 ? "+" : ""}{reconfirm.deviationPct.toFixed(1)}%)
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={() => confirmMutation.mutate(reconfirm.newPrice)}
+            disabled={busy}
+            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-gain/15 text-gain hover:bg-gain/25 transition-colors disabled:opacity-50"
+          >
+            <Check size={14} /> Trotzdem bestätigen
+          </button>
+          <button
+            onClick={() => rejectMutation.mutate()}
+            disabled={busy}
+            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-loss/15 text-loss hover:bg-loss/25 transition-colors disabled:opacity-50"
+          >
+            <X size={14} /> Ablehnen
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-bg-card border border-border rounded-card px-4 py-4 flex flex-wrap items-center gap-3 justify-between">
@@ -55,7 +109,7 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
       </div>
       <div className="flex gap-2">
         <button
-          onClick={() => confirmMutation.mutate()}
+          onClick={() => confirmMutation.mutate(undefined)}
           disabled={busy}
           className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-gain/15 text-gain hover:bg-gain/25 transition-colors disabled:opacity-50"
         >
@@ -73,13 +127,46 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
   );
 }
 
+// Chunk 2c: alle 5 erreichbaren Status unterscheidbar (Aufgabe Punkt 5) -
+// Farbe + Label reichen, kein Redesign.
+const STATUS_BADGE: Record<ConfirmationStatus, { label: string; cls: string }> = {
+  pending: { label: "Ausstehend", cls: "bg-paper/15 text-paper" },
+  confirmed: { label: "Bestätigt", cls: "bg-gain/15 text-gain" },
+  rejected: { label: "Abgelehnt", cls: "bg-text-muted/15 text-text-muted" },
+  expired: { label: "Abgelaufen", cls: "bg-text-disabled/15 text-text-disabled" },
+  failed: { label: "Fehlgeschlagen", cls: "bg-loss/15 text-loss" },
+};
+
+function HistoryRow({ row }: { row: ConfirmationHistoryEntry }) {
+  const badge = STATUS_BADGE[row.status];
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-border last:border-0 text-xs">
+      <div>
+        <span className="font-semibold text-text-primary">{row.ticker}</span>{" "}
+        <span className="text-text-muted font-figures">${row.signal_price.toFixed(2)} · {formatDatum(row.signal_timestamp)}</span>
+        {row.status === "failed" && row.failure_reason && (
+          <div className="text-loss mt-0.5">Grund: {row.failure_reason}</div>
+        )}
+      </div>
+      <span className={`px-2 py-0.5 rounded-btn font-semibold ${badge.cls}`}>{badge.label}</span>
+    </div>
+  );
+}
+
 export default function Bestaetigungen() {
+  const [notice, setNotice] = useState<string | null>(null);
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["pending-confirmations"],
     queryFn: () => api.get<PendingConfirmation[]>("/api/pending-confirmations").then((r) => r.data),
     // Läuft nach spätestens ein paar Minuten ab (siehe expires_at) - kurzes
     // Polling hält die Queue aktuell, ohne dass der Nutzer manuell neu laden muss.
     refetchInterval: 30_000,
+  });
+
+  const { data: history } = useQuery({
+    queryKey: ["confirmation-history"],
+    queryFn: () => api.get<ConfirmationHistoryEntry[]>("/api/pending-confirmations/history").then((r) => r.data),
   });
 
   if (isLoading) {
@@ -106,17 +193,35 @@ export default function Bestaetigungen() {
         <p className="text-xs text-text-muted">
           Entry-Signale, die auf deine Bestätigung warten (nur sichtbar, wenn dein Ausführungs-Modus auf
           &bdquo;Bestätigung erforderlich&ldquo; steht). Der Trade wird erst platziert, wenn du hier oder über den
-          Link in der Bestätigungs-Mail zustimmst.
+          Link in der Bestätigungs-Mail zustimmst - weicht der Preis beim Klick zu stark vom Signalzeitpunkt ab,
+          wirst du vorher noch einmal um Bestätigung zum neuen Preis gebeten.
         </p>
       </div>
+
+      {notice && (
+        <div className="bg-bg-card border border-border rounded-card px-4 py-2 text-xs text-text-primary">{notice}</div>
+      )}
 
       {rows.length === 0 ? (
         <p className="text-text-muted text-sm py-4 text-center">Keine ausstehenden Bestätigungen.</p>
       ) : (
         <div className="space-y-3">
           {rows.map((row) => (
-            <PendingCard key={row.id} row={row} onResolved={() => {}} />
+            <PendingCard key={row.id} row={row} onResolved={setNotice} />
           ))}
+        </div>
+      )}
+
+      {history && history.length > 0 && (
+        <div>
+          <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-2">
+            Verlauf
+          </div>
+          <div className="bg-bg-card border border-border rounded-card px-4 py-2">
+            {history.map((row) => (
+              <HistoryRow key={row.id} row={row} />
+            ))}
+          </div>
         </div>
       )}
     </div>
