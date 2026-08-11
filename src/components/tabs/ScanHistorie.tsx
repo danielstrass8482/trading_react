@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import { api, ScanDay, ScanLogEntry, ScanLogStat, SaxoScanDay, mergeScanDays, MIN_SIGNAL_SCORE } from "@/lib/api";
+import { useIsAdmin } from "@/lib/auth";
 import DataTable, { Column } from "@/components/ui/DataTable";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
@@ -200,6 +201,16 @@ export default function ScanHistorie() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const toggleSort = () => setSortDir((d) => (d === "asc" ? "desc" : "asc"));
 
+  // Datenleck-Fix (2026-08-11): /api/saxo/scan-log ist seit dem Backend-Fix
+  // (siehe trading_api_saxo.get_scan_log) Owner-only (403 für jeden
+  // Nicht-Daniel-Account) – Saxo ist strukturell single-tenant, es gibt
+  // keine "andere" Saxo-Sicht. isAdmin (== Daniel, siehe useIsAdmin-
+  // Docstring) spiegelt das im Frontend, damit Nicht-Admin-Nutzer gar nicht
+  // erst den zum Scheitern verurteilten Request auslösen (reine UX/
+  // Traffic-Optimierung – die eigentliche Sicherheitsgrenze ist der 403
+  // serverseitig, nicht dieses Gate hier).
+  const isAdmin = useIsAdmin();
+
   const { data: alpacaDays, isLoading: alpacaLoading, isError, refetch } = useQuery({
     queryKey: ["scan-log-grouped", "alpaca"],
     queryFn: () => api.get<ScanDay[]>("/api/scan-log", { params: { limit: 2000 } }).then((r) => r.data),
@@ -207,14 +218,16 @@ export default function ScanHistorie() {
 
   // Saxo bewusst nicht Teil des Error-Gates (analog Performance.tsx
   // TradeHistorySection) – fällt die Saxo-API aus, zeigt die Historie
-  // einfach nur Alpaca-Scans statt komplett zu brechen.
+  // einfach nur Alpaca-Scans statt komplett zu brechen. Zusätzlich seit dem
+  // Datenleck-Fix nur für Admin (Daniel) überhaupt aktiviert (enabled).
   const { data: saxoDays, isLoading: saxoLoading } = useQuery({
     queryKey: ["scan-log-grouped", "saxo"],
     queryFn: () => api.get<SaxoScanDay[]>("/api/saxo/scan-log", { params: { limit: 2000 } }).then((r) => r.data),
+    enabled: isAdmin,
   });
 
-  const isLoading = alpacaLoading || saxoLoading;
-  const days = alpacaDays ? mergeScanDays(alpacaDays, saxoDays ?? []) : undefined;
+  const isLoading = alpacaLoading || (isAdmin && saxoLoading);
+  const days = alpacaDays ? mergeScanDays(alpacaDays, isAdmin ? saxoDays ?? [] : []) : undefined;
 
   const { data: filterStats } = useQuery({
     queryKey: ["scan-log-stats"],
@@ -232,10 +245,10 @@ export default function ScanHistorie() {
     queryKey: ["scan-log-ticker", "saxo", tickerFilter],
     queryFn: () =>
       api.get<SaxoScanDay[]>("/api/saxo/scan-log", { params: { limit: 500, ticker: tickerFilter.toUpperCase() } }).then((r) => r.data),
-    enabled: tickerFilter.trim().length > 0,
+    enabled: isAdmin && tickerFilter.trim().length > 0,
   });
 
-  const tickerDays = tickerDaysAlpaca ? mergeScanDays(tickerDaysAlpaca, tickerDaysSaxo ?? []) : undefined;
+  const tickerDays = tickerDaysAlpaca ? mergeScanDays(tickerDaysAlpaca, isAdmin ? tickerDaysSaxo ?? [] : []) : undefined;
 
   // Neuesten Tag + dessen ersten Slot beim ersten Laden automatisch aufklappen.
   useEffect(() => {
