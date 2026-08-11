@@ -1,18 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu } from "lucide-react";
+import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu, Clock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, SaxoOverview, BotConfigEntry, PauseStatus, PauseReason } from "@/lib/api";
 import { logout, useAuthUser } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
-export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "einstellungen" | "dokumentation";
+export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "bestaetigungen" | "einstellungen" | "dokumentation";
 
 const NAV_ITEMS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }> }[] = [
   { key: "uebersicht", label: "Übersicht", icon: BarChart2 },
   { key: "performance", label: "Performance", icon: TrendingUp },
   { key: "scanhistorie", label: "Scan-Historie", icon: Search },
+  // Confirm-Tier Chunk 2b (2026-08-11): Dashboard-Queue für EXECUTION_MODE=
+  // 'confirm'-Nutzer, siehe Bestaetigungen.tsx.
+  { key: "bestaetigungen", label: "Bestätigungen", icon: Clock },
   { key: "einstellungen", label: "Einstellungen", icon: Settings },
   { key: "dokumentation", label: "Dokumentation", icon: BookOpen },
 ];
@@ -258,7 +261,7 @@ export default function Sidebar({
         className="bg-bg-sidebar border-t border-border flex justify-around items-center"
       >
         {BOTTOM_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-          const isActive = key === "mehr" ? active === "dokumentation" : key === active;
+          const isActive = key === "mehr" ? active === "dokumentation" || active === "bestaetigungen" : key === active;
           return (
             <button
               key={key}
@@ -299,6 +302,15 @@ export default function Sidebar({
           </div>
 
           <div className="shrink-0">
+            <button
+              onClick={() => {
+                onSelect("bestaetigungen");
+                setSheetOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
+            >
+              <Clock size={18} strokeWidth={1.5} /> Bestätigungen
+            </button>
             <button
               onClick={() => {
                 onSelect("dokumentation");

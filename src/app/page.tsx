@@ -9,6 +9,7 @@ import AlpacaOnboarding from "@/components/AlpacaOnboarding";
 import Uebersicht from "@/components/tabs/Uebersicht";
 import Performance from "@/components/tabs/Performance";
 import ScanHistorie from "@/components/tabs/ScanHistorie";
+import Bestaetigungen from "@/components/tabs/Bestaetigungen";
 import Einstellungen from "@/components/tabs/Einstellungen";
 import Dokumentation from "@/components/tabs/Dokumentation";
 
@@ -16,6 +17,7 @@ const TABS: Record<TabKey, React.ComponentType> = {
   uebersicht: Uebersicht,
   performance: Performance,
   scanhistorie: ScanHistorie,
+  bestaetigungen: Bestaetigungen,
   einstellungen: Einstellungen,
   dokumentation: Dokumentation,
 };

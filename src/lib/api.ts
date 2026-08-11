@@ -690,3 +690,23 @@ export function parseGuardrailInput(key: string, display: string): string {
   if (spec.format === "pct") return String(n / 100);
   return String(n);
 }
+
+// Confirm-Tier Chunk 2b (2026-08-11, siehe trading_api.py::/api/pending-
+// confirmations) – Dashboard-Queue-Kanal, Pendant zum Email-Magic-Link
+// (siehe trading_api.py::/api/confirm-execution/{token}, dort KEIN Login,
+// hier dagegen ganz normal über den bestehenden api-Client mit JWT-Cookie).
+export type PendingConfirmation = {
+  id: number;
+  ticker: string;
+  qty_or_amount: number;
+  signal_price: number;
+  signal_timestamp: string;
+  expires_at: string;
+  broker: string;
+};
+
+export type ConfirmationResolution = {
+  ok: boolean;
+  message: string;
+  trade_id: number | null;
+};
