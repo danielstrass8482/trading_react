@@ -200,6 +200,15 @@ export default function Sidebar({
   const saxoCfg = Object.fromEntries((saxoConfig ?? []).map((c) => [c.key, c.value]));
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Bug-Fix (2026-08-12): "Bestätigungen" landet strukturell nie einen
+  // Eintrag für EXECUTION_MODE='auto'-Nutzer (siehe database.
+  // DEFAULT_USER_CONFIG/get_user_live_config - PENDING-Zeilen entstehen nur
+  // im Confirm-Modus). cfg kommt bereits pro-Nutzer aufgelöst aus /api/
+  // bot-config (Owner: global bot_config, sonst user_bot_config/DEFAULT_
+  // USER_CONFIG), kein zusätzlicher Call nötig.
+  const isConfirmMode = cfg.EXECUTION_MODE === "confirm";
+  const navItems = NAV_ITEMS.filter((item) => item.key !== "bestaetigungen" || isConfirmMode);
+
   return (
     <>
     {/* FIX 2026-08-06: aside war vorher min-h-screen (wächst mit dem Inhalt
@@ -217,7 +226,7 @@ export default function Sidebar({
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+          {navItems.map(({ key, label, icon: Icon }) => {
             const isActive = key === active;
             return (
               <button
@@ -302,15 +311,17 @@ export default function Sidebar({
           </div>
 
           <div className="shrink-0">
-            <button
-              onClick={() => {
-                onSelect("bestaetigungen");
-                setSheetOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
-            >
-              <Clock size={18} strokeWidth={1.5} /> Bestätigungen
-            </button>
+            {isConfirmMode && (
+              <button
+                onClick={() => {
+                  onSelect("bestaetigungen");
+                  setSheetOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
+              >
+                <Clock size={18} strokeWidth={1.5} /> Bestätigungen
+              </button>
+            )}
             <button
               onClick={() => {
                 onSelect("dokumentation");
