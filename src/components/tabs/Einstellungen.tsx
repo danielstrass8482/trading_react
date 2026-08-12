@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info, CheckCircle } from "lucide-react";
+import { Pencil, Check, X, Shield, Activity, Zap, AlertTriangle, Info, CheckCircle, Eye, EyeOff } from "lucide-react";
 import {
   api, BotConfigEntry, EntrySlot, Overview, SaxoOverview, LearningProposal, CapitalAllocations,
   AlpacaStatus, GUARDRAIL_LABELS, fmtGuardrailValue, parseGuardrailInput,
@@ -888,6 +888,145 @@ function LearningProposalsSection() {
   );
 }
 
+// ───────────────────────── Account: Passwort ändern ─────────────────────────
+// Bewusst broker-/rollen-unabhängig (jeder eingeloggte Nutzer hat ein
+// eigenes Passwort, unabhängig von Alpaca/Saxo/Admin-Status) - daher als
+// eigener Abschnitt ganz oben, außerhalb der BrokerSwitcher-Logik unten.
+// PasswordInput lokal dupliziert statt aus reset-password/ResetPasswordForm.tsx
+// importiert (andere Route-Gruppe, gleiches "Duplication over cross-import"-
+// Muster wie z.B. watchdog.ALPACA_HOURS/confirm_execution._extract_score im
+// Backend).
+function PasswordInput({
+  value, onChange, className, ...props
+}: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type"> & {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        className={`${className} pr-10`}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        tabIndex={-1}
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-gold"
+      >
+        {visible ? <EyeOff size={16} strokeWidth={1.5} /> : <Eye size={16} strokeWidth={1.5} />}
+      </button>
+    </div>
+  );
+}
+
+function AccountSection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordRepeat, setNewPasswordRepeat] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  const inputCls = "w-full bg-bg-app border border-border rounded-btn px-3 py-2 text-sm focus:border-gold focus:outline-none";
+  const labelCls = "block text-xs uppercase tracking-wider text-text-muted mb-1.5";
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.post("/api/auth/change-password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      }),
+    onSuccess: () => {
+      setCurrentPassword("");
+      setNewPassword("");
+      setNewPasswordRepeat("");
+      setSuccess(true);
+    },
+    onError: () => setSuccess(false),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSuccess(false);
+    if (newPassword.length < 8) {
+      setLocalError("Neues Passwort muss mindestens 8 Zeichen lang sein.");
+      return;
+    }
+    if (newPassword !== newPasswordRepeat) {
+      setLocalError("Neue Passwörter stimmen nicht überein.");
+      return;
+    }
+    setLocalError(null);
+    mutation.mutate();
+  }
+
+  const serverError = mutation.isError
+    ? (mutation.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+    : null;
+  const errorMessage = localError ?? serverError ?? (mutation.isError ? "Passwort ändern fehlgeschlagen." : null);
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Account</h3>
+      <form onSubmit={handleSubmit} className="bg-bg-card border border-border rounded-card px-4 py-4 space-y-4 max-w-md">
+        <div>
+          <label className={labelCls}>Aktuelles Passwort</label>
+          <PasswordInput
+            required
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Neues Passwort (mind. 8 Zeichen)</label>
+          <PasswordInput
+            required
+            minLength={8}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className={labelCls}>Neues Passwort wiederholen</label>
+          <PasswordInput
+            required
+            value={newPasswordRepeat}
+            onChange={(e) => setNewPasswordRepeat(e.target.value)}
+            className={inputCls}
+          />
+        </div>
+
+        {errorMessage && (
+          <div className="text-sm text-loss bg-loss/10 border border-loss/30 rounded-btn px-3 py-2 flex items-start gap-2">
+            <AlertTriangle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+        {success && (
+          <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-3 py-2 flex items-start gap-2">
+            <CheckCircle size={14} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+            <span>Passwort erfolgreich geändert.</span>
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={mutation.isPending}
+          className="bg-gold text-bg-app font-medium text-sm px-4 py-2 rounded-btn disabled:opacity-40"
+        >
+          {mutation.isPending ? "Speichere…" : "Passwort ändern"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Einstellungen() {
   const isAdmin = useIsAdmin();
   const [broker, setBroker] = useState<BrokerKey>("alpaca");
@@ -937,6 +1076,8 @@ export default function Einstellungen() {
         <h2 className="text-lg font-semibold">Einstellungen</h2>
         <BrokerSwitcher broker={broker} onChange={setBroker} />
       </div>
+
+      <AccountSection />
 
       {isLoading ? (
         <div className="space-y-6">
