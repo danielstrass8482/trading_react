@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { CheckCircle, Eye, EyeOff } from "lucide-react";
-import { login, register } from "@/lib/auth";
+import { login, register, forgotPassword } from "@/lib/auth";
 
-type Tab = "anmelden" | "registrieren";
+type Tab = "anmelden" | "registrieren" | "vergessen";
 
 function PasswordInput({
   value,
@@ -56,6 +56,12 @@ export default function LoginForm() {
   const [regLoading, setRegLoading] = useState(false);
   const [regSuccess, setRegSuccess] = useState(false);
 
+  // Passwort vergessen
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState<string | null>(null);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -93,6 +99,20 @@ export default function LoginForm() {
     }
   }
 
+  async function handleForgotPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setForgotError(null);
+    setForgotLoading(true);
+    try {
+      const message = await forgotPassword(forgotEmail);
+      setForgotMessage(message);
+    } catch (err) {
+      setForgotError(err instanceof Error ? err.message : "Anfrage fehlgeschlagen.");
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
   const inputCls =
     "w-full bg-bg-app border border-border rounded-btn px-3 py-2 text-sm focus:border-gold focus:outline-none";
   const labelCls = "block text-xs uppercase tracking-wider text-text-muted mb-1.5";
@@ -102,27 +122,33 @@ export default function LoginForm() {
       <div className="w-full max-w-sm bg-bg-card border border-gold/40 rounded-card px-8 py-10">
         <div className="text-xl font-semibold text-gold mb-1 text-center">AI Trading Bot</div>
         <p className="text-sm text-text-muted text-center mb-6">
-          {tab === "anmelden" ? "Anmelden, um fortzufahren" : "Neuen Zugang beantragen"}
+          {tab === "anmelden"
+            ? "Anmelden, um fortzufahren"
+            : tab === "registrieren"
+            ? "Neuen Zugang beantragen"
+            : "Passwort zurücksetzen"}
         </p>
 
-        <div className="flex border-b border-border mb-6">
-          <button
-            onClick={() => setTab("anmelden")}
-            className={`flex-1 pb-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === "anmelden" ? "border-gold text-gold" : "border-transparent text-text-muted"
-            }`}
-          >
-            Anmelden
-          </button>
-          <button
-            onClick={() => setTab("registrieren")}
-            className={`flex-1 pb-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === "registrieren" ? "border-gold text-gold" : "border-transparent text-text-muted"
-            }`}
-          >
-            Registrieren
-          </button>
-        </div>
+        {tab !== "vergessen" && (
+          <div className="flex border-b border-border mb-6">
+            <button
+              onClick={() => setTab("anmelden")}
+              className={`flex-1 pb-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === "anmelden" ? "border-gold text-gold" : "border-transparent text-text-muted"
+              }`}
+            >
+              Anmelden
+            </button>
+            <button
+              onClick={() => setTab("registrieren")}
+              className={`flex-1 pb-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === "registrieren" ? "border-gold text-gold" : "border-transparent text-text-muted"
+              }`}
+            >
+              Registrieren
+            </button>
+          </div>
+        )}
 
         {tab === "anmelden" ? (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -138,7 +164,21 @@ export default function LoginForm() {
               />
             </div>
             <div>
-              <label className={labelCls}>Passwort</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className={labelCls}>Passwort</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForgotError(null);
+                    setForgotMessage(null);
+                    setForgotEmail(email);
+                    setTab("vergessen");
+                  }}
+                  className="text-xs text-text-muted hover:text-gold"
+                >
+                  Passwort vergessen?
+                </button>
+              </div>
               <PasswordInput
                 required
                 value={password}
@@ -157,6 +197,56 @@ export default function LoginForm() {
               {loading ? "Anmelden…" : "Anmelden"}
             </button>
           </form>
+        ) : tab === "vergessen" ? (
+          forgotMessage ? (
+            <div className="space-y-4">
+              <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3 flex items-start gap-2">
+                <CheckCircle size={16} strokeWidth={1.5} className="shrink-0 mt-0.5" />
+                <span>{forgotMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTab("anmelden")}
+                className="w-full text-xs text-text-muted hover:text-gold text-center"
+              >
+                Zurück zum Login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <p className="text-sm text-text-muted">
+                Gib deine E-Mail-Adresse ein. Falls sie registriert ist, schicken wir dir einen Link zum Zurücksetzen.
+              </p>
+              <div>
+                <label className={labelCls}>E-Mail</label>
+                <input
+                  type="email"
+                  autoFocus
+                  required
+                  value={forgotEmail}
+                  onChange={(e) => setForgotEmail(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
+
+              {forgotError && <div className="text-sm text-loss">{forgotError}</div>}
+
+              <button
+                type="submit"
+                disabled={forgotLoading}
+                className="w-full bg-gold text-bg-app font-medium text-sm px-4 py-2.5 rounded-btn disabled:opacity-40 mt-2"
+              >
+                {forgotLoading ? "Sende…" : "Link anfordern"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("anmelden")}
+                className="w-full text-xs text-text-muted hover:text-gold text-center"
+              >
+                Zurück zum Login
+              </button>
+            </form>
+          )
         ) : regSuccess ? (
           <div className="text-sm text-gain bg-gain/10 border border-gain/30 rounded-btn px-4 py-3 flex items-start gap-2">
             <CheckCircle size={16} strokeWidth={1.5} className="shrink-0 mt-0.5" />

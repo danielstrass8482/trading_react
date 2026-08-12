@@ -42,6 +42,36 @@ export const register = async (
   }
 };
 
+// Antwort ist laut Backend-Design (siehe portfolio_os/api.py::forgot_password)
+// für existierende UND nicht-existierende E-Mail-Adressen identisch (kein
+// Enumeration-Leak) - res.ok ist daher praktisch immer true, außer bei
+// echten Betriebsfehlern (429 Rate-Limit, Netzwerkfehler). Gibt die
+// generische Backend-Message zurück, die die UI unverändert anzeigt.
+export const forgotPassword = async (email: string): Promise<string> => {
+  const res = await fetch("/api/auth/forgot-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  if (res.status === 429) {
+    throw new Error("Zu viele Versuche. Bitte warte kurz und versuche es erneut.");
+  }
+  const data = await res.json().catch(() => ({}));
+  return data.message || "Falls diese E-Mail registriert ist, wurde ein Link zum Zurücksetzen versendet.";
+};
+
+export const resetPassword = async (token: string, password: string): Promise<void> => {
+  const res = await fetch("/api/auth/reset-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Link ungültig oder abgelaufen.");
+  }
+};
+
 export const logout = async () => {
   await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
   if (typeof window !== "undefined") {
