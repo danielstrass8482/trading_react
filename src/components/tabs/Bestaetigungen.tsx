@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, Check, X, AlertTriangle } from "lucide-react";
+import { Clock, Check, X, AlertTriangle, Loader2 } from "lucide-react";
 import { api, PendingConfirmation, ConfirmationResolution, ConfirmationHistoryEntry, ConfirmationStatus } from "@/lib/api";
 import { fmtEtDateTime } from "@/lib/format";
 import { CardSkeleton } from "@/components/ui/Skeleton";
@@ -68,6 +68,11 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
         .then((r) => r.data),
     onSuccess: (result) => {
       if (result.needs_reconfirmation && result.old_price != null && result.new_price != null && result.deviation_pct != null) {
+        // Kein echter Abschluss, sondern ein neuer, expliziter Entscheidungs-
+        // punkt für den Nutzer (siehe reconfirm-Ansicht unten) - firedRef
+        // muss zurückgesetzt werden, sonst wären "Trotzdem bestätigen"/
+        // "Ablehnen" dort durch den Klick-Guard von oben dauerhaft blockiert.
+        firedRef.current = false;
         setReconfirm({ oldPrice: result.old_price, newPrice: result.new_price, deviationPct: result.deviation_pct });
         return;
       }
@@ -82,7 +87,10 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
     // nichts). Karte bleibt hier bewusst STEHEN (kein removeFromPendingCache/
     // invalidate) - der Vorgang ist ja nicht abgeschlossen, ein erneuter
     // Versuch muss weiterhin möglich sein.
-    onError: () => onResolved(`${row.ticker}: Verbindung fehlgeschlagen – bitte erneut versuchen.`, false),
+    onError: () => {
+      firedRef.current = false;  // Karte bleibt stehen, ein erneuter Versuch muss möglich sein
+      onResolved(`${row.ticker}: Verbindung fehlgeschlagen – bitte erneut versuchen.`, false);
+    },
   });
   const rejectMutation = useMutation({
     mutationFn: () => api.post<ConfirmationResolution>(`/api/pending-confirmations/${row.id}/reject`).then((r) => r.data),
@@ -91,10 +99,40 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
       invalidate();
       onResolved(result.message, result.ok);
     },
-    onError: () => onResolved(`${row.ticker}: Verbindung fehlgeschlagen – bitte erneut versuchen.`, false),
+    onError: () => {
+      firedRef.current = false;  // Karte bleibt stehen, ein erneuter Versuch muss möglich sein
+      onResolved(`${row.ticker}: Verbindung fehlgeschlagen – bitte erneut versuchen.`, false);
+    },
   });
 
   const busy = confirmMutation.isPending || rejectMutation.isPending;
+
+  // Race-Condition-Fix (2026-08-13): schnelles Mehrfachklicken (3-4x kurz
+  // hintereinander) auf "Bestätigen" konnte dazu führen, dass mehrere
+  // Confirm-Requests für UNTERSCHIEDLICHE Einträge quasi gleichzeitig
+  // beim Backend ankamen, bevor `disabled={busy}` durch den React-Re-Render
+  // überhaupt im DOM sichtbar wurde (siehe broker._user_trade_guardrail_lock
+  // in trading_bot für den serverseitigen Teil des Fixes - der hier
+  // schützt zusätzlich JEDE EINZELNE Karte clientseitig, damit gar nicht
+  // erst mehrere Requests rausgehen). firedRef wird SYNCHRON beim allerersten
+  // Klick gesetzt (vor jedem Re-Render), nicht erst über `busy`/`disabled`
+  // (das hängt vom nächsten Render-Zyklus ab) - zweite/dritte Klicks auf
+  // DENSELBEN Button innerhalb desselben Ticks lösen dadurch garantiert
+  // keinen zweiten Request aus. Wird bei einem Fehler zurückgesetzt (siehe
+  // onError unten), damit ein erneuter Versuch weiterhin möglich ist - die
+  // Karte bleibt bei einem Fehler bewusst stehen (kein removeFromPendingCache).
+  const firedRef = useRef(false);
+
+  function handleConfirm(ackPrice?: number) {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    confirmMutation.mutate(ackPrice);
+  }
+  function handleReject() {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    rejectMutation.mutate();
+  }
 
   if (reconfirm) {
     return (
@@ -108,18 +146,20 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
         </div>
         <div className="flex gap-2 pt-1">
           <button
-            onClick={() => confirmMutation.mutate(reconfirm.newPrice)}
+            onClick={() => handleConfirm(reconfirm.newPrice)}
             disabled={busy}
             className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-gain/15 text-gain hover:bg-gain/25 transition-colors disabled:opacity-50"
           >
-            <Check size={14} /> Trotzdem bestätigen
+            {confirmMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            {confirmMutation.isPending ? "Bestätige…" : "Trotzdem bestätigen"}
           </button>
           <button
-            onClick={() => rejectMutation.mutate()}
+            onClick={handleReject}
             disabled={busy}
             className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-loss/15 text-loss hover:bg-loss/25 transition-colors disabled:opacity-50"
           >
-            <X size={14} /> Ablehnen
+            {rejectMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+            {rejectMutation.isPending ? "Lehne ab…" : "Ablehnen"}
           </button>
         </div>
       </div>
@@ -155,18 +195,20 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
       </div>
       <div className="flex gap-2">
         <button
-          onClick={() => confirmMutation.mutate(undefined)}
+          onClick={() => handleConfirm(undefined)}
           disabled={busy}
           className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-gain/15 text-gain hover:bg-gain/25 transition-colors disabled:opacity-50"
         >
-          <Check size={14} /> Bestätigen
+          {confirmMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          {confirmMutation.isPending ? "Bestätige…" : "Bestätigen"}
         </button>
         <button
-          onClick={() => rejectMutation.mutate()}
+          onClick={handleReject}
           disabled={busy}
           className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-btn bg-loss/15 text-loss hover:bg-loss/25 transition-colors disabled:opacity-50"
         >
-          <X size={14} /> Ablehnen
+          {rejectMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+          {rejectMutation.isPending ? "Lehne ab…" : "Ablehnen"}
         </button>
       </div>
     </div>
