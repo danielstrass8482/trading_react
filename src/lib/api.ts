@@ -34,6 +34,10 @@ export type TradingMode = "LIVE" | "PAPER";
 
 export type OpenTrade = {
   ticker: string;
+  // Firmenname (siehe database.TickerCompanyName/trading_api._attach_company_names) –
+  // null solange der Ticker noch nicht gecacht wurde (z.B. Bestandstrade vor
+  // Einführung dieses Felds) – Frontend zeigt dann nur den reinen Ticker, siehe TickerLabel.
+  company_name: string | null;
   direction: string;
   instrument_type: string;
   entry_price: number;
@@ -115,6 +119,10 @@ export type Overview = {
 // kein trailing_sl/mode, capital_used_eur statt capital_used).
 export type SaxoOpenTrade = {
   ticker: string;
+  // Firmenname – bei Saxo statisch aus config.WATCHLIST (siehe
+  // trading_api_saxo._attach_company_names), praktisch nie null solange der
+  // Ticker in der Watchlist bleibt.
+  company_name: string | null;
   exchange: string;
   currency: string;
   entry_price: number;
@@ -431,6 +439,7 @@ export type EntrySlot = {
 
 export type TradeHistoryEntry = {
   ticker: string;
+  company_name: string | null;
   direction: string;
   quantity: number;
   entry_price: number;
@@ -471,6 +480,7 @@ export type TradeHistoryEntry = {
 // direction/mode, pnl_eur statt pnl_usd, capital_used_eur statt capital_used).
 export type SaxoTradeEntry = {
   ticker: string;
+  company_name: string | null;
   exchange: string;
   currency: string;
   direction: string;
@@ -507,6 +517,7 @@ export type SaxoTradeEntry = {
 // get_total_pnl_eur/get_daily_pnl_eur, hier nirgends angefasst).
 export type CombinedTradeEntry = {
   ticker: string;
+  company_name: string | null;
   broker: "alpaca" | "saxo";
   currency: string;
   quantity: number;
@@ -531,7 +542,7 @@ export type CombinedTradeEntry = {
 
 export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
   return {
-    ticker: t.ticker, broker: "alpaca", currency: "USD", quantity: t.quantity,
+    ticker: t.ticker, company_name: t.company_name ?? null, broker: "alpaca", currency: "USD", quantity: t.quantity,
     entry_price: t.entry_price, exit_price: t.exit_price, current_price: t.current_price,
     pnl: t.pnl_usd, pnl_pct: t.pnl_pct,
     unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
@@ -547,7 +558,7 @@ export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
 
 export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
   return {
-    ticker: t.ticker, broker: "saxo", currency: t.currency, quantity: t.quantity,
+    ticker: t.ticker, company_name: t.company_name ?? null, broker: "saxo", currency: t.currency, quantity: t.quantity,
     entry_price: t.entry_price, exit_price: t.exit_price, current_price: t.current_price,
     pnl: t.pnl_eur, pnl_pct: t.pnl_pct,
     unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
@@ -565,6 +576,7 @@ export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
 // die Karten-Darstellung mit optionalen Feldern zu verzweigen.
 export type CombinedOpenPosition = {
   ticker: string;
+  company_name: string | null;
   broker: "alpaca" | "saxo";
   currency: string;
   entry_price: number;
@@ -589,7 +601,7 @@ export type CombinedOpenPosition = {
 
 export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
   return {
-    ticker: t.ticker, broker: "alpaca", currency: "USD",
+    ticker: t.ticker, company_name: t.company_name ?? null, broker: "alpaca", currency: "USD",
     entry_price: t.entry_price, current_price: t.current_price,
     stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
     capital_used: t.capital_used,
@@ -604,7 +616,7 @@ export function fromAlpacaOpenTrade(t: OpenTrade): CombinedOpenPosition {
 
 export function fromSaxoOpenTrade(t: SaxoOpenTrade): CombinedOpenPosition {
   return {
-    ticker: t.ticker, broker: "saxo", currency: t.currency,
+    ticker: t.ticker, company_name: t.company_name ?? null, broker: "saxo", currency: t.currency,
     entry_price: t.entry_price, current_price: t.current_price,
     stop_loss: t.stop_loss, take_profit: t.take_profit, quantity: t.quantity,
     capital_used: t.capital_used_eur,
@@ -698,6 +710,7 @@ export function parseGuardrailInput(key: string, display: string): string {
 export type PendingConfirmation = {
   id: number;
   ticker: string;
+  company_name: string | null;
   qty_or_amount: number;
   signal_price: number;
   signal_timestamp: string;

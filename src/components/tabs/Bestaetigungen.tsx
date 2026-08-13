@@ -7,6 +7,7 @@ import { api, PendingConfirmation, ConfirmationResolution, ConfirmationHistoryEn
 import { fmtEtDateTime } from "@/lib/format";
 import { CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
+import TickerLabel from "@/components/ui/TickerLabel";
 
 // Confirm-Tier Chunk 2b+2c (2026-08-11): Dashboard-Queue-Kanal für
 // EXECUTION_MODE='confirm'-Nutzer (siehe database.DEFAULT_USER_CONFIG,
@@ -137,8 +138,9 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
   if (reconfirm) {
     return (
       <div className="bg-bg-card border border-gold/40 rounded-card px-4 py-4 space-y-2">
-        <div className="flex items-center gap-2 font-semibold text-gold">
-          <AlertTriangle size={16} /> {row.ticker}: Preis hat sich geändert
+        <div className="flex items-center gap-2 font-semibold text-gold min-w-0">
+          <AlertTriangle size={16} className="shrink-0" />
+          <TickerLabel ticker={row.ticker} companyName={row.company_name} className="max-w-[220px]" />: Preis hat sich geändert
         </div>
         <div className="text-xs text-text-muted font-figures">
           Preis zum Signalzeitpunkt: ${reconfirm.oldPrice.toFixed(2)} → Aktuell: ${reconfirm.newPrice.toFixed(2)}
@@ -169,9 +171,9 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
   return (
     <div className="bg-bg-card border border-border rounded-card px-4 py-4 flex flex-wrap items-center gap-3 justify-between">
       <div>
-        <div className="flex items-center gap-2 font-semibold text-text-primary">
-          {row.ticker}
-          <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-gold/20 text-gold">
+        <div className="flex items-center gap-2 font-semibold text-text-primary min-w-0">
+          <TickerLabel ticker={row.ticker} companyName={row.company_name} className="max-w-[220px] shrink-0" />
+          <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-gold/20 text-gold shrink-0">
             {row.broker.toUpperCase()}
           </span>
           {/* Score-Anzeige (Confirm-Tier Chunk 2d, Aufgabe Punkt 5) - der
@@ -230,7 +232,7 @@ function HistoryRow({ row }: { row: ConfirmationHistoryEntry }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-border last:border-0 text-xs">
       <div>
-        <span className="font-semibold text-text-primary">{row.ticker}</span>{" "}
+        <TickerLabel ticker={row.ticker} companyName={row.company_name} className="font-semibold text-text-primary max-w-[220px]" />{" "}
         <span className="text-text-muted font-figures">${row.signal_price.toFixed(2)} · {fmtEtDateTime(row.signal_timestamp)}</span>
         {row.status === "failed" && row.failure_reason && (
           <div className="text-loss mt-0.5">Grund: {row.failure_reason}</div>

@@ -11,6 +11,7 @@ import {
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
+import TickerLabel from "@/components/ui/TickerLabel";
 import { fmtMoney, fmtMoneySigned, fmtPct, fmtMenge, gainLossClass } from "@/lib/format";
 
 // Deutsche Labels für score_breakdown-Keys (siehe rule_engine.calculate_score
@@ -385,13 +386,13 @@ function TradeHistorySection({
                   >
                     <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
                     <td className="py-2 font-medium truncate">
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 min-w-0">
                         {hasDetails && (
                           isExpanded
                             ? <ChevronDown size={13} className="text-text-muted shrink-0" />
                             : <ChevronRight size={13} className="text-text-muted shrink-0" />
                         )}
-                        {t.ticker}
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="max-w-[200px]" />
                       </span>
                     </td>
                     <td className="py-2 text-text-muted truncate hidden md:table-cell">{t.sector ?? "–"}</td>
@@ -720,13 +721,13 @@ export default function Performance() {
           label="Bester Trade"
           value={bestTrade ? fmtMoneySigned(bestTrade.pnl ?? 0, bestTrade.currency) : "–"}
           color="gain"
-          subtext={bestTrade?.ticker}
+          subtext={bestTrade && <TickerLabel ticker={bestTrade.ticker} companyName={bestTrade.company_name} />}
         />
         <KPICard
           label="Schlechtester Trade"
           value={worstTrade ? fmtMoneySigned(worstTrade.pnl ?? 0, worstTrade.currency) : "–"}
           color="loss"
-          subtext={worstTrade?.ticker}
+          subtext={worstTrade && <TickerLabel ticker={worstTrade.ticker} companyName={worstTrade.company_name} />}
         />
         <KPICard
           label="Realisierter P&L"

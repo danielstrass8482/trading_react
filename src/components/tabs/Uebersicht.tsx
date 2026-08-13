@@ -8,6 +8,7 @@ import {
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
 import ErrorState from "@/components/ui/ErrorState";
+import TickerLabel from "@/components/ui/TickerLabel";
 import { fmtUsd, fmtUsdSigned, fmtMoney, fmtMoneySigned, fmtMenge, gainLossClass } from "@/lib/format";
 
 const REGIME_LABEL: Record<string, { icon: typeof TrendingUp; label: string }> = {
@@ -347,9 +348,9 @@ export default function Uebersicht() {
                   {/* Desktop: kompakte Zeile */}
                   <div className="hidden md:block bg-bg-card border border-border rounded-card px-4 py-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="font-medium flex items-center gap-1.5">
-                        {t.ticker}
-                        <span className="flex items-center gap-1 text-gold text-xs">
+                      <div className="font-medium flex items-center gap-1.5 min-w-0">
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="max-w-[220px]" />
+                        <span className="flex items-center gap-1 text-gold text-xs shrink-0">
                           <Bot size={14} strokeWidth={1.5} /> {t.mode}
                         </span>
                         {brokerBadge(t.broker)}
@@ -388,9 +389,9 @@ export default function Uebersicht() {
                   {/* Mobile: großes Card-Format */}
                   <div className="md:hidden bg-bg-card border border-border rounded-card p-3">
                     <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-base">{t.ticker}</span>
-                        <span className="text-[9px] border border-live text-live rounded px-1.5 py-0.5">{t.mode}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="font-semibold text-base max-w-[160px] shrink-0" />
+                        <span className="text-[9px] border border-live text-live rounded px-1.5 py-0.5 shrink-0">{t.mode}</span>
                         {brokerBadge(t.broker)}
                       </div>
                       <span className={`text-sm font-semibold font-figures ${gainLossClass(t.unrealized_pnl)}`}>
