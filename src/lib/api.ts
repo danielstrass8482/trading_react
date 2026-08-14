@@ -747,3 +747,112 @@ export type ConfirmationResolution = {
   new_price?: number;
   deviation_pct?: number;
 };
+
+// ════════════════════════════════════════════════════════════════════════
+// Direkthandel (Feature-Konzept 2026-08-14, Backend Chunk 1 - Commits
+// 388b3d2/ea8bf16, Frontend Chunk 2) - manuelle Käufe/Verkäufe unabhängig
+// vom Bot, aktuell Alpaca-only (Saxo bleibt Single-Tenant-Blocker, siehe
+// Konzept-Dokument). Alle /api/active/*-Endpunkte existieren bereits im
+// Backend und sind dort per Logik-/API-/Live-Tests abgedeckt - hier nur
+// die Typen für den Aufruf.
+// ════════════════════════════════════════════════════════════════════════
+
+// Branchen-Keys aus trading_shared/scoring.py::BLACKLIST_MAPPING - gleiche
+// Quelle wie beim Bot, daher hier 1:1 dieselben sechs Keys.
+export const BLACKLIST_LABELS: Record<string, string> = {
+  waffen: "Waffen/Rüstung",
+  tabak: "Tabak",
+  fossil: "Fossile Energie",
+  pharma: "Pharma",
+  gluecksspiel: "Glücksspiel",
+  krypto: "Krypto",
+};
+
+export type ActiveSearchResult = {
+  ticker: string;
+  company_name: string | null;
+  price: number;
+  broker: "alpaca";
+};
+
+export type ActiveAnalysis = {
+  ticker: string;
+  company_name: string | null;
+  sector: string | null;
+  current_price: number;
+  score: number;
+  score_breakdown: ScoreBreakdown;
+  suggested_stop_loss: number;
+  suggested_take_profit: number;
+  blacklist_flag: string | null;
+  // "eingeschränkte Datenbasis" (Ticker außerhalb der bekannten Universe,
+  // <200 Handelstage Historie für SMA200) - siehe active_trading.get_analysis.
+  limited_data: boolean;
+  chart: { date: string; close: number }[];
+};
+
+export type ActiveSectorCandidate = {
+  ticker: string;
+  company_name: string | null;
+  sector: string | null;
+  score: number;
+  current_price: number;
+  blacklist_flag: string | null;
+  limited_data: boolean;
+};
+
+export type ActiveSectorRecommendation = {
+  sector_query: string;
+  // Blacklist-Check auf die SEKTOR-ANFRAGE selbst (nicht nur die Treffer) -
+  // siehe active_trading.sector_recommendation.
+  blacklist_flag: string | null;
+  candidates: ActiveSectorCandidate[];
+};
+
+export type ManualTradeOrigin = "SEARCH" | "SECTOR_RECOMMENDATION";
+
+export type ManualTradeStatus = "OPEN" | "CLOSED_MANUAL" | "CLOSED_SL" | "CLOSED_TP" | "FAILED_ENTRY";
+
+// Form analog _manual_trade_to_dict() in trading_api.py - current_price/
+// unrealized_pnl/unrealized_pnl_pct sind nur bei status="OPEN" befüllt
+// (siehe get_manual_trades-Endpoint, gleiche Anreicherung wie /api/trades/history).
+export type ManualTrade = {
+  id: number;
+  ticker: string;
+  company_name: string | null;
+  quantity: number;
+  entry_price: number | null;
+  capital_used: number;
+  status: ManualTradeStatus;
+  exit_grund: string;
+  exit_price: number | null;
+  closed_at: string | null;
+  pnl_usd: number | null;
+  pnl_pct: number | null;
+  broker: string;
+  sector: string | null;
+  rule_score_at_purchase: number | null;
+  blacklist_flag_at_purchase: string | null;
+  origin: ManualTradeOrigin;
+  created_at: string;
+  stop_loss_price: number | null;
+  take_profit_price: number | null;
+  current_price: number | null;
+  unrealized_pnl: number | null;
+  unrealized_pnl_pct: number | null;
+};
+
+export type ActiveBuyRequest = {
+  ticker: string;
+  client_order_id: string;
+  quantity?: number;
+  notional?: number;
+  stop_loss_price?: number;
+  take_profit_price?: number;
+  origin: ManualTradeOrigin;
+};
+
+export type ActiveSellRequest = {
+  trade_id: number;
+  client_order_id: string;
+};

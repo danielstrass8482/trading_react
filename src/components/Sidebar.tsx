@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu, Clock } from "lucide-react";
+import { BarChart2, TrendingUp, Search, Settings, BookOpen, LogOut, Menu, Clock, Zap } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, Overview, SaxoOverview, BotConfigEntry, PauseStatus, PauseReason } from "@/lib/api";
 import { logout, useAuthUser } from "@/lib/auth";
 import MarketStatus from "@/components/MarketStatus";
 
-export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "bestaetigungen" | "einstellungen" | "dokumentation";
+export type TabKey = "uebersicht" | "performance" | "scanhistorie" | "bestaetigungen" | "aktiv" | "einstellungen" | "dokumentation";
 
 const NAV_ITEMS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number; strokeWidth?: number }> }[] = [
   { key: "uebersicht", label: "Übersicht", icon: BarChart2 },
@@ -16,6 +16,13 @@ const NAV_ITEMS: { key: TabKey; label: string; icon: React.ComponentType<{ size?
   // Confirm-Tier Chunk 2b (2026-08-11): Dashboard-Queue für EXECUTION_MODE=
   // 'confirm'-Nutzer, siehe Bestaetigungen.tsx.
   { key: "bestaetigungen", label: "Bestätigungen", icon: Clock },
+  // Direkthandel-Feature (Konzept 2026-08-14, Backend Chunk 1/Frontend
+  // Chunk 2): manuelle Käufe/Verkäufe unabhängig vom Bot, siehe Aktiv.tsx.
+  // Bewusst zwischen Bestätigungen und Einstellungen - bei den Tabs, auf
+  // denen der Kunde tatsächlich handelt, nicht bei den reinen Konto-
+  // Ansichten. Analog zu Bestätigungen NICHT in BOTTOM_NAV_ITEMS (Mobile-
+  // Bottom-Nav bleibt auf die 4 Kernbereiche + "Mehr" beschränkt).
+  { key: "aktiv", label: "Aktiv", icon: Zap },
   { key: "einstellungen", label: "Einstellungen", icon: Settings },
   { key: "dokumentation", label: "Dokumentation", icon: BookOpen },
 ];
@@ -270,7 +277,7 @@ export default function Sidebar({
         className="bg-bg-sidebar border-t border-border flex justify-around items-center"
       >
         {BOTTOM_NAV_ITEMS.map(({ key, label, icon: Icon }) => {
-          const isActive = key === "mehr" ? active === "dokumentation" || active === "bestaetigungen" : key === active;
+          const isActive = key === "mehr" ? active === "dokumentation" || active === "bestaetigungen" || active === "aktiv" : key === active;
           return (
             <button
               key={key}
@@ -322,6 +329,20 @@ export default function Sidebar({
                 <Clock size={18} strokeWidth={1.5} /> Bestätigungen
               </button>
             )}
+            {/* Direkthandel-Feature (Frontend Chunk 2): "Aktiv" fehlte hier
+                zunächst ganz - NAV_ITEMS treibt nur die Desktop-Sidebar,
+                dieses Sheet listet seine Einträge bewusst manuell (analog
+                zum bestehenden Bestätigungen-Eintrag), sonst auf Mobile
+                unerreichbar gewesen. */}
+            <button
+              onClick={() => {
+                onSelect("aktiv");
+                setSheetOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-3 py-3 text-sm text-text-primary hover:bg-bg-hover rounded-nav"
+            >
+              <Zap size={18} strokeWidth={1.5} /> Aktiv
+            </button>
             <button
               onClick={() => {
                 onSelect("dokumentation");

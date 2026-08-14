@@ -10,6 +10,7 @@ import Uebersicht from "@/components/tabs/Uebersicht";
 import Performance from "@/components/tabs/Performance";
 import ScanHistorie from "@/components/tabs/ScanHistorie";
 import Bestaetigungen from "@/components/tabs/Bestaetigungen";
+import Aktiv from "@/components/tabs/Aktiv";
 import Einstellungen from "@/components/tabs/Einstellungen";
 import Dokumentation from "@/components/tabs/Dokumentation";
 
@@ -18,6 +19,7 @@ const TABS: Record<TabKey, React.ComponentType> = {
   performance: Performance,
   scanhistorie: ScanHistorie,
   bestaetigungen: Bestaetigungen,
+  aktiv: Aktiv,
   einstellungen: Einstellungen,
   dokumentation: Dokumentation,
 };
