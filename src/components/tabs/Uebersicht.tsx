@@ -305,18 +305,33 @@ export default function Uebersicht() {
           <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-3">
             Verteilung nach Sektor <span className="normal-case text-text-disabled">(nur Alpaca)</span>
           </div>
-          <div className="space-y-2">
+          {/* Mobile (Fix 2026-08-14, Fortsetzung der Serie 2958b58/4a4bc18/
+              48b03c6): Sektor-Name bekam bei w-16 truncate abgeschnittenen
+              Text ("Consum...") - "Consumer Cyclical" und "Consumer
+              Defensive" wurden dadurch ununterscheidbar, echter
+              Informationsverlust statt nur Kosmetik. Name jetzt in einer
+              eigenen Zeile OBERHALB von Balken+Betrag (voller Text, kein
+              Tooltip), Desktop unverändert einzeilig (dort genug Platz,
+              siehe Playwright-Screenshot bei 1280px). Etwas größerer
+              Mobile-Abstand zwischen Einträgen (space-y-3 statt 2), damit
+              bei der jetzt zweizeiligen Darstellung klar bleibt, welcher
+              Name zu welchem Balken gehört - gleiches Card-Grouping-Prinzip
+              wie in der Handelshistorie (48b03c6). */}
+          <div className="space-y-3 md:space-y-2">
             {Object.entries(sectorTotals)
               .sort((a, b) => b[1] - a[1])
               .map(([sector, wert]) => {
                 const pct = (wert / totalCapital) * 100;
                 return (
-                  <div key={sector} className="flex items-center gap-2 md:gap-3 text-sm">
-                    <span className="w-16 md:w-32 shrink-0 text-text-muted truncate">{sector}</span>
-                    <div className="flex-1 min-w-0 h-1.5 bg-bg-hover rounded-btn overflow-hidden">
-                      <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
+                  <div key={sector}>
+                    <span className="md:hidden block text-text-muted text-xs mb-1">{sector}</span>
+                    <div className="flex items-center gap-2 md:gap-3 text-sm">
+                      <span className="hidden md:block md:w-32 shrink-0 text-text-muted truncate">{sector}</span>
+                      <div className="flex-1 min-w-0 h-1.5 bg-bg-hover rounded-btn overflow-hidden">
+                        <div className="h-full bg-gold" style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="font-figures w-16 md:w-24 shrink-0 text-right">{fmtUsd(wert, 0)}</span>
                     </div>
-                    <span className="font-figures w-16 md:w-24 shrink-0 text-right">{fmtUsd(wert, 0)}</span>
                   </div>
                 );
               })}
