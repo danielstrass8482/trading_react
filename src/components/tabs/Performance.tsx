@@ -340,14 +340,21 @@ function TradeHistorySection({
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <table className="w-full table-fixed text-xs md:text-sm">
             <colgroup>
-              <col className="w-20 md:w-[9%]" />
-              <col className="w-16 md:w-[9%]" />
+              <col className="w-12 md:w-[9%]" />
+              {/* Ticker-Spalte auf Mobile deutlich breiter (Redesign 2026-08-15:
+                  Firmenname muss lesbar umbrechen können, nicht nur der Ticker
+                  selbst - mit w-28 brauchte "The Charles Schwab Corporation
+                  (SCHW)" noch 3 Zeilen, mit w-36 nur noch 2, per Playwright-
+                  Screenshot verifiziert) - Datum-/Status-Spalte kompensieren
+                  (kurzes "13.08."-Format bzw. bereits wrap-toleranter Badge,
+                  siehe statusBadge()). */}
+              <col className="w-36 md:w-[9%]" />
               <col className="hidden md:table-column md:w-[10%]" />
               <col className="hidden md:table-column md:w-[11%]" />
               <col className="hidden md:table-column md:w-[11%]" />
               <col className="hidden md:table-column md:w-[8%]" />
               <col className="md:w-[15%]" />
-              <col className="w-20 md:w-[13%]" />
+              <col className="w-16 md:w-[13%]" />
               <col className="hidden md:table-column md:w-[8%]" />
               <col className="hidden md:table-column md:w-[6%]" />
             </colgroup>
@@ -385,14 +392,14 @@ function TradeHistorySection({
                     className={`border-b border-border/50 last:border-0 ${hasDetails ? "cursor-pointer hover:bg-bg-hover" : ""}`}
                   >
                     <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
-                    <td className="py-2 font-medium truncate">
-                      <span className="flex items-center gap-1 min-w-0">
+                    <td className="py-2 font-medium md:truncate">
+                      <span className="flex items-start md:items-center gap-1 min-w-0">
                         {hasDetails && (
                           isExpanded
-                            ? <ChevronDown size={13} className="text-text-muted shrink-0" />
-                            : <ChevronRight size={13} className="text-text-muted shrink-0" />
+                            ? <ChevronDown size={13} className="text-text-muted shrink-0 mt-0.5 md:mt-0" />
+                            : <ChevronRight size={13} className="text-text-muted shrink-0 mt-0.5 md:mt-0" />
                         )}
-                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="max-w-[200px]" />
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="md:max-w-[200px]" />
                       </span>
                     </td>
                     <td className="py-2 text-text-muted truncate hidden md:table-cell">{t.sector ?? "–"}</td>

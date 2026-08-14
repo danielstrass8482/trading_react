@@ -138,9 +138,16 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
   if (reconfirm) {
     return (
       <div className="bg-bg-card border border-gold/40 rounded-card px-4 py-4 space-y-2">
-        <div className="flex items-center gap-2 font-semibold text-gold min-w-0">
-          <AlertTriangle size={16} className="shrink-0" />
-          <TickerLabel ticker={row.ticker} companyName={row.company_name} className="max-w-[220px]" />: Preis hat sich geändert
+        <div className="flex items-start gap-2 font-semibold text-gold">
+          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+          {/* Ticker+Suffix-Text in EINEM Element statt getrennter Flex-Items
+              (Redesign 2026-08-15): so bleibt es normaler, umbrechender
+              Textfluss statt dass der Suffix bei einer mehrzeiligen
+              TickerLabel-Ausgabe rechts danebenschwebt. */}
+          <span>
+            <TickerLabel ticker={row.ticker} companyName={row.company_name} className="md:max-w-[220px]" />
+            : Preis hat sich geändert
+          </span>
         </div>
         <div className="text-xs text-text-muted font-figures">
           Preis zum Signalzeitpunkt: ${reconfirm.oldPrice.toFixed(2)} → Aktuell: ${reconfirm.newPrice.toFixed(2)}
@@ -171,22 +178,29 @@ function PendingCard({ row, onResolved }: { row: PendingConfirmation; onResolved
   return (
     <div className="bg-bg-card border border-border rounded-card px-4 py-4 flex flex-wrap items-center gap-3 justify-between">
       <div>
-        <div className="flex items-center gap-2 font-semibold text-text-primary min-w-0">
-          <TickerLabel ticker={row.ticker} companyName={row.company_name} className="max-w-[220px] shrink-0" />
-          <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-gold/20 text-gold shrink-0">
-            {row.broker.toUpperCase()}
-          </span>
-          {/* Score-Anzeige (Confirm-Tier Chunk 2d, Aufgabe Punkt 5) - der
-              Wert wird bei jedem Re-Scan aktualisiert (siehe confirm_
-              execution.update_pending_confirmation), solange der Kandidat
-              über der Schwelle bleibt. Backend liefert die Liste bereits
-              absteigend sortiert (Aufgabe Punkt 6, siehe list_pending_
-              confirmations-Docstring). */}
-          {row.score != null && (
-            <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-paper/20 text-paper font-figures">
-              Score {row.score}
+        {/* Ticker/Firmenname auf Mobile in eigener Zeile (Redesign 2026-08-15:
+            title-Attribut/Long-Press funktioniert auf Touch-Geräten nicht
+            zuverlässig, siehe TickerLabel-Docstring) - darf umbrechen, ohne
+            die Broker-/Score-Badges zu zerdrücken. Auf Desktop (md:flex-row)
+            unverändert eine einzige Zeile wie zuvor.*/}
+        <div className="flex flex-col md:flex-row md:items-center gap-1 md:gap-2 font-semibold text-text-primary">
+          <TickerLabel ticker={row.ticker} companyName={row.company_name} className="md:max-w-[220px] md:shrink-0" />
+          <div className="flex items-center gap-2">
+            <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-gold/20 text-gold shrink-0">
+              {row.broker.toUpperCase()}
             </span>
-          )}
+            {/* Score-Anzeige (Confirm-Tier Chunk 2d, Aufgabe Punkt 5) - der
+                Wert wird bei jedem Re-Scan aktualisiert (siehe confirm_
+                execution.update_pending_confirmation), solange der Kandidat
+                über der Schwelle bleibt. Backend liefert die Liste bereits
+                absteigend sortiert (Aufgabe Punkt 6, siehe list_pending_
+                confirmations-Docstring). */}
+            {row.score != null && (
+              <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn bg-paper/20 text-paper font-figures">
+                Score {row.score}
+              </span>
+            )}
+          </div>
         </div>
         <div className="text-xs text-text-muted font-figures mt-1">
           Menge {row.qty_or_amount} · Preis ${row.signal_price.toFixed(2)} · Aktualisiert {fmtEtDateTime(row.signal_timestamp)}
@@ -232,7 +246,7 @@ function HistoryRow({ row }: { row: ConfirmationHistoryEntry }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 py-2 border-b border-border last:border-0 text-xs">
       <div>
-        <TickerLabel ticker={row.ticker} companyName={row.company_name} className="font-semibold text-text-primary max-w-[220px]" />{" "}
+        <TickerLabel ticker={row.ticker} companyName={row.company_name} className="font-semibold text-text-primary md:max-w-[220px]" />{" "}
         <span className="text-text-muted font-figures">${row.signal_price.toFixed(2)} · {fmtEtDateTime(row.signal_timestamp)}</span>
         {row.status === "failed" && row.failure_reason && (
           <div className="text-loss mt-0.5">Grund: {row.failure_reason}</div>

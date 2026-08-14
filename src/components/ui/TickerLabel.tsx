@@ -1,12 +1,28 @@
 // Beta-Feedback (Dana, 2026-08-13): überall wo bisher nur der reine Ticker
 // stand, jetzt "Firmenname (TICKER)" – z.B. "United Parcel Service (UPS)".
-// Mobile-Verhalten folgt der bereits etablierten Konvention dieser Codebase
-// (siehe ScanHistorie.tsx statusCell-Docstring): reine Tooltips sind auf
-// Mobile praktisch unauffindbar (kein Hover) – deshalb auf Mobile NUR der
-// kompakte Ticker (title-Attribut liefert den Firmennamen fürs Long-Press),
-// auf Desktop (md:-Breakpoint) der volle "Firmenname (TICKER)"-Text mit
-// truncate+title als zusätzliches Sicherheitsnetz bei sehr langen Namen in
-// schmalen Spalten (z.B. Tabellen mit vielen Spalten).
+//
+// Mobile-Redesign (Daniel-Feedback, 2026-08-15): die ursprüngliche Version
+// zeigte auf Mobile NUR den Ticker + Firmenname im title-Attribut fürs
+// Long-Press (analog ScanHistorie.tsx statusCell()). Auf Daniels eigenem
+// Gerät zeigte der Long-Press aber gar nichts - Diagnose ergab: keine
+// Datenlücke (dieselbe /api/overview-Response, derselbe company_name-Wert
+// wie auf Desktop), sondern eine bekannte Browser-Einschränkung: das
+// title-Attribut löst nur bei einem "mouseover"-Event aus, das Touch-Geräte
+// grundsätzlich nie erzeugen - iOS Safari unterstützt title-Tooltips per
+// Long-Press überhaupt nicht (Android Chrome nur inkonsistent). Der
+// Mechanismus war also nie zuverlässig nutzbar, nicht nur bei Daniel.
+//
+// Neues Verhalten: Mobile zeigt jetzt IMMER den vollen "Firmenname
+// (TICKER)"-Text direkt (kein title/Long-Press mehr nötig), darf dafür bei
+// Platzmangel mehrzeilig umbrechen (whitespace-normal statt truncate) -
+// Aufrufer räumen dafür der Zeile/Karte genug vertikalen Raum ein (siehe
+// Uebersicht.tsx/Bestaetigungen.tsx: Ticker-Zeile bricht auf Mobile
+// responsive in eine eigene Reihe um, Badges rutschen darunter). Kein
+// horizontales Scrollen, kein Abschneiden ohne Alternative.
+//
+// Desktop (md:-Breakpoint) UNVERÄNDERT: einzeilig mit truncate+title als
+// Sicherheitsnetz bei sehr langen Namen in schmalen Spalten - funktioniert
+// laut Daniel bereits einwandfrei, hier bewusst nicht angefasst.
 //
 // Fallback: fehlt der Firmenname (noch nicht gecacht, siehe
 // database.TickerCompanyName/config.WATCHLIST), wird auf BEIDEN Breakpoints
@@ -29,8 +45,8 @@ export default function TickerLabel({
 
   return (
     <>
-      <span className={`md:hidden ${className}`} title={full}>
-        {ticker}
+      <span className={`md:hidden whitespace-normal break-words ${className}`}>
+        {full}
       </span>
       <span
         className={`hidden md:inline-block max-w-full truncate align-bottom ${className}`}

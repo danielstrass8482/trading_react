@@ -388,10 +388,12 @@ export default function Uebersicht() {
 
                   {/* Mobile: großes Card-Format */}
                   <div className="md:hidden bg-bg-card border border-border rounded-card p-3">
+                    {/* Ticker/Firmenname in eigener Zeile (Redesign 2026-08-15): darf
+                        umbrechen, ohne die Badges/den P&L daneben zu zerdrücken. */}
+                    <TickerLabel ticker={t.ticker} companyName={t.company_name} className="font-semibold text-base block mb-1.5" />
                     <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="font-semibold text-base max-w-[160px] shrink-0" />
-                        <span className="text-[9px] border border-live text-live rounded px-1.5 py-0.5 shrink-0">{t.mode}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] border border-live text-live rounded px-1.5 py-0.5">{t.mode}</span>
                         {brokerBadge(t.broker)}
                       </div>
                       <span className={`text-sm font-semibold font-figures ${gainLossClass(t.unrealized_pnl)}`}>
