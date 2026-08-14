@@ -353,8 +353,13 @@ function TradeHistorySection({
               <col className="hidden md:table-column md:w-[11%]" />
               <col className="hidden md:table-column md:w-[11%]" />
               <col className="hidden md:table-column md:w-[8%]" />
-              <col className="md:w-[15%]" />
-              <col className="w-16 md:w-[13%]" />
+              {/* P&L + Status: auf Mobile rutschen beide in eine eigene
+                  zweite Zeile unter Datum/Ticker (siehe td weiter unten),
+                  ihre echten Spalten bleiben deshalb hier wie die übrigen
+                  Desktop-only-Spalten ausgeblendet statt eine eigene
+                  Mobile-Breite zu beanspruchen. */}
+              <col className="hidden md:table-column md:w-[15%]" />
+              <col className="hidden md:table-column md:w-[13%]" />
               <col className="hidden md:table-column md:w-[8%]" />
               <col className="hidden md:table-column md:w-[6%]" />
             </colgroup>
@@ -366,8 +371,8 @@ function TradeHistorySection({
                 <SortableTh label="Entry" sortKey="entry" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Kurs" sortKey="price" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Menge" sortKey="quantity" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-                <SortableTh label="P&L" sortKey="pnl" align="right" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-                <th className="text-left py-2 pl-2 font-semibold">Status</th>
+                <SortableTh label="P&L" sortKey="pnl" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <th className="text-left py-2 pl-2 font-semibold hidden md:table-cell">Status</th>
                 <SortableTh label="Broker" sortKey="broker" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Score" sortKey="score" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               </tr>
@@ -389,7 +394,7 @@ function TradeHistorySection({
                   <Fragment key={rowKey}>
                   <tr
                     onClick={hasDetails ? () => setExpandedKey(isExpanded ? null : rowKey) : undefined}
-                    className={`border-b border-border/50 last:border-0 ${hasDetails ? "cursor-pointer hover:bg-bg-hover" : ""}`}
+                    className={`md:border-b border-border/50 last:border-0 ${hasDetails ? "cursor-pointer hover:bg-bg-hover" : ""}`}
                   >
                     <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
                     <td className="py-2 font-medium md:truncate">
@@ -408,29 +413,49 @@ function TradeHistorySection({
                       {kurs != null ? fmtMoney(kurs, t.currency) : "–"}
                     </td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
-                    <td className="py-2 text-right">
+                    <td className="py-2 text-right hidden md:table-cell">
                       {pnl != null ? (
-                        <>
-                          <div className={`md:hidden font-figures font-semibold text-sm ${gainLossClass(pnl)}`}>
-                            {fmtMoneySigned(pnl, t.currency)}
-                          </div>
-                          {pnlPct != null && (
-                            <div className="md:hidden text-[11px] text-text-muted font-figures">
-                              ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
-                            </div>
-                          )}
-                          <div className={`hidden md:block font-figures whitespace-nowrap ${gainLossClass(pnl)}`}>
-                            {fmtMoneySigned(pnl, t.currency)}
-                            {pnlPct != null && ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
-                          </div>
-                        </>
+                        <div className={`font-figures whitespace-nowrap ${gainLossClass(pnl)}`}>
+                          {fmtMoneySigned(pnl, t.currency)}
+                          {pnlPct != null && ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
+                        </div>
                       ) : (
                         "–"
                       )}
                     </td>
-                    <td className="py-2">{statusBadge(t.exit_grund)}</td>
+                    <td className="py-2 hidden md:table-cell">{statusBadge(t.exit_grund)}</td>
                     <td className="py-2 hidden md:table-cell">{brokerBadgeSmall(t.broker)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
+                  </tr>
+                  {/* Mobile-only "Ergebnis"-Zeile: P&L + Status rutschen hier
+                      zusammen auf eine eigene zweite Zeile unter Datum/Ticker,
+                      statt (bei langen Firmennamen) in dieselbe Zeile
+                      hineingequetscht zu werden (Nachzieher-Fix zu 2958b58). */}
+                  <tr
+                    onClick={hasDetails ? () => setExpandedKey(isExpanded ? null : rowKey) : undefined}
+                    className={`border-b border-border/50 last:border-0 md:hidden ${hasDetails ? "cursor-pointer" : ""}`}
+                  >
+                    <td colSpan={10} className="pb-2 pt-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          {pnl != null ? (
+                            <>
+                              <span className={`font-figures font-semibold text-sm ${gainLossClass(pnl)}`}>
+                                {fmtMoneySigned(pnl, t.currency)}
+                              </span>
+                              {pnlPct != null && (
+                                <span className="text-[11px] text-text-muted font-figures ml-1">
+                                  ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-text-muted text-sm">–</span>
+                          )}
+                        </div>
+                        {statusBadge(t.exit_grund)}
+                      </div>
+                    </td>
                   </tr>
                   {isExpanded && hasDetails && (
                     <tr className="border-b border-border/50 last:border-0 bg-bg-hover/40">
