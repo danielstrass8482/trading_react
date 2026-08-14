@@ -24,6 +24,17 @@
 // Sicherheitsnetz bei sehr langen Namen in schmalen Spalten - funktioniert
 // laut Daniel bereits einwandfrei, hier bewusst nicht angefasst.
 //
+// wrapOnDesktop (Fix 2026-08-14, Performance.tsx-Handelshistorie): dort war
+// die Ticker-Spalte trotz reichlich Platz in den übrigen Spalten zu schmal,
+// truncate schnitt Namen wie "Deutsche Post DHL (DHL.DE)" ab. Statt das
+// Default-Verhalten für ALLE Aufrufer umzustellen (KPICard-Subtexte etc.
+// brauchen truncate weiterhin, da dort der Platz tatsächlich knapp bleibt),
+// per Opt-in-Prop: identisches Wrap-statt-Abschneiden-Verhalten wie auf
+// Mobile, bewusst OHNE title-Tooltip (Konsistenz-Vorgabe: Info immer
+// sichtbar statt hinter Hover versteckt) - EIN Element statt der
+// md:hidden/hidden md:inline-block-Aufteilung, da sich Mobile/Desktop in
+// diesem Modus nicht mehr unterscheiden.
+//
 // Fallback: fehlt der Firmenname (noch nicht gecacht, siehe
 // database.TickerCompanyName/config.WATCHLIST), wird auf BEIDEN Breakpoints
 // einfach der reine Ticker gezeigt – kein Crash, keine leere Anzeige, kein
@@ -32,16 +43,22 @@ export default function TickerLabel({
   ticker,
   companyName,
   className = "",
+  wrapOnDesktop = false,
 }: {
   ticker: string;
   companyName?: string | null;
   className?: string;
+  wrapOnDesktop?: boolean;
 }) {
   if (!companyName) {
     return <span className={className}>{ticker}</span>;
   }
 
   const full = `${companyName} (${ticker})`;
+
+  if (wrapOnDesktop) {
+    return <span className={`whitespace-normal break-words ${className}`}>{full}</span>;
+  }
 
   return (
     <>

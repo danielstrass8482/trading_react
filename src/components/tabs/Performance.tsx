@@ -71,7 +71,7 @@ const STATUS_BADGE: Record<string, string> = {
 function statusBadge(grund: string) {
   const cls = STATUS_BADGE[grund] ?? "bg-text-muted/15 text-text-muted";
   return (
-    <span className={`inline-block text-[0.65rem] font-semibold px-2 py-0.5 rounded-btn leading-tight md:whitespace-nowrap ${cls}`}>
+    <span className={`inline-block text-[0.65rem] font-semibold px-2 py-0.5 rounded-btn leading-tight ${cls}`}>
       {grund}
     </span>
   );
@@ -223,7 +223,7 @@ function SortableTh({
   return (
     <th
       onClick={() => onSort(key)}
-      className={`py-2 font-semibold cursor-pointer select-none hover:text-text-primary transition-colors ${align === "right" ? "text-right" : "text-left"} ${hideOnMobile ? "hidden md:table-cell" : ""} ${isActive ? "text-text-primary" : ""}`}
+      className={`py-2 px-2 font-semibold cursor-pointer select-none hover:text-text-primary transition-colors ${align === "right" ? "text-right" : "text-left"} ${hideOnMobile ? "hidden md:table-cell" : ""} ${isActive ? "text-text-primary" : ""}`}
     >
       <span className={`inline-flex items-center gap-0.5 ${align === "right" ? "flex-row-reverse" : ""}`}>
         {label}
@@ -340,39 +340,57 @@ function TradeHistorySection({
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <table className="w-full table-fixed text-xs md:text-sm">
             <colgroup>
-              <col className="w-12 md:w-[9%]" />
-              {/* Ticker-Spalte auf Mobile deutlich breiter (Redesign 2026-08-15:
-                  Firmenname muss lesbar umbrechen können, nicht nur der Ticker
-                  selbst - mit w-28 brauchte "The Charles Schwab Corporation
-                  (SCHW)" noch 3 Zeilen, mit w-36 nur noch 2, per Playwright-
-                  Screenshot verifiziert) - Datum-/Status-Spalte kompensieren
-                  (kurzes "13.08."-Format bzw. bereits wrap-toleranter Badge,
-                  siehe statusBadge()). */}
-              <col className="w-36 md:w-[9%]" />
-              <col className="hidden md:table-column md:w-[10%]" />
-              <col className="hidden md:table-column md:w-[11%]" />
-              <col className="hidden md:table-column md:w-[11%]" />
-              <col className="hidden md:table-column md:w-[8%]" />
+              {/* Datum: auf Mobile jetzt Teil der Ergebnis-Zeile (siehe unten,
+                  Fix 2026-08-14 "visuelle Zusammengehörigkeit"), Spalte daher
+                  wie die übrigen Desktop-only-Spalten ausgeblendet statt
+                  eigene Mobile-Breite zu beanspruchen. */}
+              <col className="hidden md:table-column md:w-[58px]" />
+              {/* Ticker-Spalte: auf Mobile jetzt die EINZIGE Spalte der ersten
+                  Zeile (Datum ist raus, siehe oben) - explizit w-full statt
+                  gar keiner Mobile-Breite: table-fixed bestimmt die
+                  Spaltenbreite sonst EINMALIG aus der ERSTEN Zeile (hier z.B.
+                  kurzes "UBER") und zwingt JEDE folgende Zeile in dieselbe
+                  schmale Breite, egal wie lang deren Inhalt ist (per
+                  Playwright-Screenshot als 5-zeiliger Umbruch bei "The
+                  Charles Schwab Corporation (SCHW)" reproduziert, bevor
+                  dieser Kommentar hier stand). Auf Desktop feste 180px statt
+                  %-Anteil (Fix 2026-08-14: Namen wie "Deutsche Post DHL
+                  (DHL.DE)" wurden bei 9% truncate-abgeschnitten, obwohl
+                  rechts Platz war) + wrapOnDesktop an TickerLabel statt
+                  Abschneiden, siehe dortiger Kommentar. Restliche Spalten
+                  unten entsprechend auf feste px-Breiten umgestellt (statt
+                  %s), Summe bei 1280px/1440px per Playwright ohne
+                  horizontales Scrollen verifiziert. */}
+              <col className="w-full md:w-[180px]" />
+              <col className="hidden md:table-column md:w-[110px]" />
+              <col className="hidden md:table-column md:w-[58px]" />
+              <col className="hidden md:table-column md:w-[58px]" />
+              <col className="hidden md:table-column md:w-[58px]" />
               {/* P&L + Status: auf Mobile rutschen beide in eine eigene
                   zweite Zeile unter Datum/Ticker (siehe td weiter unten),
                   ihre echten Spalten bleiben deshalb hier wie die übrigen
                   Desktop-only-Spalten ausgeblendet statt eine eigene
-                  Mobile-Breite zu beanspruchen. */}
-              <col className="hidden md:table-column md:w-[15%]" />
-              <col className="hidden md:table-column md:w-[13%]" />
-              <col className="hidden md:table-column md:w-[8%]" />
-              <col className="hidden md:table-column md:w-[6%]" />
+                  Mobile-Breite zu beanspruchen. Sowohl P&L (Div ohne
+                  whitespace-nowrap) als auch der Status-Badge (ohne
+                  md:whitespace-nowrap, siehe statusBadge()) dürfen bei sehr
+                  langen Werten/Labels ("Time Exit (5 Tage)") auf 2 Zeilen
+                  umbrechen statt die Spalte künstlich aufzublähen - gleiches
+                  Umbruch-statt-Abschneiden-Prinzip wie bei Ticker/Sektor. */}
+              <col className="hidden md:table-column md:w-[95px]" />
+              <col className="hidden md:table-column md:w-[120px]" />
+              <col className="hidden md:table-column md:w-[78px]" />
+              <col className="hidden md:table-column md:w-[60px]" />
             </colgroup>
             <thead>
               <tr className="text-text-muted text-xs uppercase tracking-wider border-b border-border">
-                <SortableTh label="Datum" sortKey="date" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
+                <SortableTh label="Datum" sortKey="date" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Ticker" sortKey="ticker" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Sektor" sortKey="sector" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Entry" sortKey="entry" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Kurs" sortKey="price" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Menge" sortKey="quantity" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="P&L" sortKey="pnl" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
-                <th className="text-left py-2 pl-2 font-semibold hidden md:table-cell">Status</th>
+                <th className="text-left py-2 px-2 font-semibold hidden md:table-cell">Status</th>
                 <SortableTh label="Broker" sortKey="broker" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
                 <SortableTh label="Score" sortKey="score" align="right" hideOnMobile activeKey={sortKey} dir={sortDir} onSort={handleSort} />
               </tr>
@@ -396,26 +414,26 @@ function TradeHistorySection({
                     onClick={hasDetails ? () => setExpandedKey(isExpanded ? null : rowKey) : undefined}
                     className={`md:border-b border-border/50 last:border-0 ${hasDetails ? "cursor-pointer hover:bg-bg-hover" : ""}`}
                   >
-                    <td className="py-2 text-text-muted font-figures">{formatDatum(t.closed_at ?? t.created_at)}</td>
-                    <td className="py-2 font-medium md:truncate">
-                      <span className="flex items-start md:items-center gap-1 min-w-0">
+                    <td className="py-2 text-text-muted font-figures hidden md:table-cell">{formatDatum(t.closed_at ?? t.created_at)}</td>
+                    <td className="py-2 font-medium md:pr-2 max-md:pt-3 max-md:pb-0">
+                      <span className="flex items-start md:items-center gap-1 min-w-0 max-md:bg-bg-hover/30 max-md:rounded-t-btn max-md:px-3 max-md:py-1.5">
                         {hasDetails && (
                           isExpanded
                             ? <ChevronDown size={13} className="text-text-muted shrink-0 mt-0.5 md:mt-0" />
                             : <ChevronRight size={13} className="text-text-muted shrink-0 mt-0.5 md:mt-0" />
                         )}
-                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="md:max-w-[200px]" />
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} wrapOnDesktop />
                       </span>
                     </td>
-                    <td className="py-2 text-text-muted truncate hidden md:table-cell">{t.sector ?? "–"}</td>
+                    <td className="py-2 text-text-muted whitespace-normal break-words hidden md:table-cell">{t.sector ?? "–"}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMoney(t.entry_price, t.currency)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">
                       {kurs != null ? fmtMoney(kurs, t.currency) : "–"}
                     </td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{fmtMenge(t.quantity)}</td>
-                    <td className="py-2 text-right hidden md:table-cell">
+                    <td className="py-2 pl-2 text-right hidden md:table-cell">
                       {pnl != null ? (
-                        <div className={`font-figures whitespace-nowrap ${gainLossClass(pnl)}`}>
+                        <div className={`font-figures ${gainLossClass(pnl)}`}>
                           {fmtMoneySigned(pnl, t.currency)}
                           {pnlPct != null && ` (${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%)`}
                         </div>
@@ -427,19 +445,38 @@ function TradeHistorySection({
                     <td className="py-2 hidden md:table-cell">{brokerBadgeSmall(t.broker)}</td>
                     <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
                   </tr>
-                  {/* Mobile-only "Ergebnis"-Zeile: P&L + Status rutschen hier
-                      zusammen auf eine eigene zweite Zeile unter Datum/Ticker,
+                  {/* Mobile-only "Ergebnis"-Zeile: Datum+P&L+Status rutschen hier
+                      zusammen auf eine eigene zweite Zeile unter dem Ticker/
+                      Firmennamen (der jetzt allein die erste Zeile trägt),
                       statt (bei langen Firmennamen) in dieselbe Zeile
-                      hineingequetscht zu werden (Nachzieher-Fix zu 2958b58). */}
+                      hineingequetscht zu werden (Nachzieher-Fix zu 2958b58).
+                      Card-Optik (Fix 2026-08-14 "visuelle Zusammengehörigkeit"):
+                      Ticker-Span (oben) + dieser Div (unten) teilen sich
+                      dieselbe Hintergrundfarbe UND grenzen direkt aneinander
+                      (kein transparenter Innen-Abstand dazwischen), wirken
+                      dadurch wie EIN Block. Der äußere <td> trägt stattdessen
+                      den GRÖSSEREN, transparenten Abstand VOR/NACH dem Block
+                      (pt-3 oben an der Ticker-Zelle, pb-3 hier unten) - das
+                      erzeugt den gewünschten größeren Zwischenraum zwischen
+                      zwei Trades statt einer bloß dünnen Trennlinie. Die
+                      pl-Berechnung (17px = Chevron 13px + gap-1 4px) rückt
+                      diese Zeile auf dieselbe linke Kante wie der
+                      Ticker-/Firmenname-TEXT ein (nicht der Zellenrand) -
+                      nur wenn dieser Trade tatsächlich ein Chevron zeigt. */}
                   <tr
                     onClick={hasDetails ? () => setExpandedKey(isExpanded ? null : rowKey) : undefined}
-                    className={`border-b border-border/50 last:border-0 md:hidden ${hasDetails ? "cursor-pointer" : ""}`}
+                    className={`md:hidden ${hasDetails ? "cursor-pointer" : ""}`}
                   >
-                    <td colSpan={10} className="pb-2 pt-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
+                    <td colSpan={10} className="pt-0 pb-3">
+                      <div
+                        className={`flex items-center justify-between gap-2 bg-bg-hover/30 rounded-b-btn pr-3 pt-1 pb-2 ${hasDetails ? "pl-[29px]" : "pl-3"}`}
+                      >
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[11px] text-text-muted font-figures shrink-0">
+                            {formatDatum(t.closed_at ?? t.created_at)}
+                          </span>
                           {pnl != null ? (
-                            <>
+                            <div>
                               <span className={`font-figures font-semibold text-sm ${gainLossClass(pnl)}`}>
                                 {fmtMoneySigned(pnl, t.currency)}
                               </span>
@@ -448,7 +485,7 @@ function TradeHistorySection({
                                   ({pnlPct >= 0 ? "+" : ""}{pnlPct.toFixed(1)}%)
                                 </span>
                               )}
-                            </>
+                            </div>
                           ) : (
                             <span className="text-text-muted text-sm">–</span>
                           )}
