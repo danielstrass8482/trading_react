@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, ChevronUp, ArrowUpDown } from "lucide-react"
 import {
   api, Performance as PerformanceData, Benchmark, SaxoBenchmark, TradeHistoryEntry,
   SaxoTradeEntry, SaxoOverview, SaxoPerformance, CombinedTradeEntry, ScoreBreakdown, fromAlpacaTrade, fromSaxoTrade,
+  ManualTrade, fromManualTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
@@ -66,6 +67,11 @@ const STATUS_BADGE: Record<string, string> = {
   "Take Profit": "bg-gain/15 text-gain",
   "Trailing Stop": "bg-gold/15 text-gold",
   "Time Exit (5 Tage)": "bg-text-muted/15 text-text-muted",
+  // Direkthandel-eigene exit_grund-Werte (siehe _MANUAL_TRADE_EXIT_GRUND in
+  // trading_api.py) - "Offen"/"Stop Loss"/"Take Profit" nutzt Direkthandel
+  // bereits identisch zu den Bot-Labels oben mit.
+  "Manuell": "bg-text-muted/15 text-text-muted",
+  "Kauf nie gefüllt": "bg-text-muted/15 text-text-muted",
 };
 
 function statusBadge(grund: string) {
@@ -91,6 +97,21 @@ function brokerBadgeSmall(broker: "alpaca" | "saxo") {
   return (
     <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${broker === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
       {broker.toUpperCase()}
+    </span>
+  );
+}
+
+// Zusatz-Badge für Direkthandel-Trades (Aufgabe "Direkthandel in Übersicht/
+// Performance einbinden") - ergänzt, nicht ersetzt den Broker-Badge (der
+// bleibt bewusst "ALPACA", Direkthandel läuft technisch über denselben
+// Broker, ist aber konzeptionell kein Bot-Trade, siehe is_manual-Docstring
+// in api.ts). Eigener, neutraler Stil statt gold/paper - keine der beiden
+// bestehenden Broker-Farben, damit die Unterscheidung Bot vs. Direkthandel
+// nicht mit der Broker-Farbe verwechselt wird.
+function directBadge() {
+  return (
+    <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn border border-text-muted/40 text-text-primary">
+      DIREKT
     </span>
   );
 }
@@ -442,8 +463,13 @@ function TradeHistorySection({
                       )}
                     </td>
                     <td className="py-2 hidden md:table-cell">{statusBadge(t.exit_grund)}</td>
-                    <td className="py-2 hidden md:table-cell">{brokerBadgeSmall(t.broker)}</td>
-                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score}</td>
+                    <td className="py-2 hidden md:table-cell">
+                      <span className="inline-flex items-center gap-1">
+                        {brokerBadgeSmall(t.broker)}
+                        {t.is_manual && directBadge()}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right font-figures text-text-muted hidden md:table-cell">{t.rule_score ?? "–"}</td>
                   </tr>
                   {/* Mobile-only "Ergebnis"-Zeile: Datum+P&L+Status rutschen hier
                       zusammen auf eine eigene zweite Zeile unter dem Ticker/
@@ -490,7 +516,10 @@ function TradeHistorySection({
                             <span className="text-text-muted text-sm">–</span>
                           )}
                         </div>
-                        {statusBadge(t.exit_grund)}
+                        <span className="flex items-center gap-1">
+                          {t.is_manual && directBadge()}
+                          {statusBadge(t.exit_grund)}
+                        </span>
                       </div>
                     </td>
                   </tr>
@@ -620,16 +649,25 @@ export default function Performance() {
     queryKey: ["trade-history", "saxo"],
     queryFn: () => api.get<SaxoTradeEntry[]>("/api/saxo/trades/history", { params: { limit: 50 } }).then((r) => r.data),
   });
-  const historyLoading = alpacaHistLoading || saxoHistLoading;
+  // Direkthandel-Trades (dritte Quelle, siehe fromManualTrade in api.ts) -
+  // bewusst Teil des Loading-Gates wie Alpaca (keine separate Fehleranzeige,
+  // gleiches Prinzip wie bei alpacaHistory: essenzielle, nicht optionale
+  // Quelle für diesen Nutzer, im Gegensatz zu Saxo).
+  const { data: manualHistory = [], isLoading: manualHistLoading } = useQuery({
+    queryKey: ["manual-trades"],
+    queryFn: () => api.get<ManualTrade[]>("/api/active/manual-trades", { params: { limit: 50 } }).then((r) => r.data),
+  });
+  const historyLoading = alpacaHistLoading || saxoHistLoading || manualHistLoading;
 
   const merged = useMemo(() => {
     const combined: CombinedTradeEntry[] = [
       ...alpacaHistory.map(fromAlpacaTrade),
       ...saxoHistory.map(fromSaxoTrade),
+      ...manualHistory.map(fromManualTrade),
     ];
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return combined;
-  }, [alpacaHistory, saxoHistory]);
+  }, [alpacaHistory, saxoHistory, manualHistory]);
 
   const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
   const closed = brokerFiltered.filter((t) => t.pnl !== null);

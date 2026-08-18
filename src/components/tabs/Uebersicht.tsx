@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
 import {
-  api, Overview, SaxoOverview, CombinedOpenPosition, fromAlpacaOpenTrade, fromSaxoOpenTrade,
+  api, Overview, SaxoOverview, CombinedOpenPosition, fromAlpacaOpenTrade, fromSaxoOpenTrade, ManualTrade,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
@@ -22,6 +22,19 @@ function brokerBadge(broker: string | null | undefined) {
   return (
     <span className={`text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn ${b === "alpaca" ? "bg-gold/20 text-gold" : "bg-paper/20 text-paper"}`}>
       {b.toUpperCase()}
+    </span>
+  );
+}
+
+// Direkthandel-Kennzeichnung (Aufgabe "Direkthandel in Übersicht/Performance
+// einbinden", 2026-08-14) - dieselbe visuelle Sprache wie das "DIREKT"-Badge
+// in Performance.tsx (dort lokal definiert, hier bewusst dupliziert statt
+// geteilt - beide Dateien pflegen ihre Badge-Helfer bereits jeweils lokal,
+// siehe brokerBadge hier vs. brokerBadgeSmall dort).
+function directBadge() {
+  return (
+    <span className="text-[0.6rem] font-semibold px-1 py-0.5 rounded-btn border border-text-muted/40 text-text-primary">
+      DIREKT
     </span>
   );
 }
@@ -107,6 +120,17 @@ export default function Uebersicht() {
     refetchInterval: 60_000,
   });
 
+  // Direkthandel (Aufgabe "Direkthandel in Übersicht/Performance einbinden",
+  // 2026-08-14) - eigene, bewusst NICHT ins Lade-/Fehler-Gate oben
+  // eingebundene Query, gleiches Degradations-Prinzip wie bei Saxo: fällt
+  // dieser Endpoint aus, zeigt nur der eigene Direkthandel-Bereich unten
+  // n/a statt die ganze Seite zu blockieren.
+  const manualQuery = useQuery({
+    queryKey: ["manual-trades"],
+    queryFn: () => api.get<ManualTrade[]>("/api/active/manual-trades", { params: { limit: 50 } }).then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -162,6 +186,20 @@ export default function Uebersicht() {
   const saxoBoundEur = saxo ? saxoPositions.reduce((sum, p) => sum + p.capital_used, 0) + (saxoUnrealizedEur ?? 0) : null;
   const saxoAvailableEur = saxo?.cash_available_eur ?? null;
 
+  // Direkthandel-Aggregate (Alpaca-only, USD) - rein clientseitig aus /api/
+  // active/manual-trades berechnet, siehe Aufgaben-Vorgabe "Frontend
+  // berechnet (Bot-P&L aus dem bestehenden Endpoint + Direkthandel-P&L
+  // addiert), nicht im Backend zusammengeführt". get_total_pnl()/
+  // get_daily_pnl() bleiben unangetastet - diese Summen fließen NUR in die
+  // Anzeige hier, nirgends zurück ins Backend.
+  const manualTrades = manualQuery.data ?? [];
+  const manualOpenPositions = manualTrades.filter((t) => t.status === "OPEN");
+  const manualCapitalUsedUsd = manualOpenPositions.reduce((sum, t) => sum + t.capital_used, 0);
+  const manualUnrealizedUsd = manualOpenPositions.reduce((sum, t) => sum + (t.unrealized_pnl ?? 0), 0);
+  const manualRealizedUsd = manualTrades
+    .filter((t) => t.pnl_usd !== null)
+    .reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
+
   // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
   // NIE als ein einziger, primärer Wert dargestellt (siehe Gesamt-Zeile
   // unten: jede Geldbetrag-Kachel ist explizit mit "≈" markiert und zeigt
@@ -169,14 +207,22 @@ export default function Uebersicht() {
   const usdToEur = saxo?.fx_rates_to_eur?.USD ?? null;
   const combinedAvailableEur =
     saxo && usdToEur && data.cash !== null && saxoAvailableEur !== null ? data.cash * usdToEur + saxoAvailableEur : null;
+  // Direkthandel-Kapital ist bereits Teil von data.cash (zieht vom selben
+  // Alpaca-Cash-Pool) - hier deshalb NUR bei "Gebunden"/"Unrealisiert"/
+  // "Realisiert" separat addiert (eigene, in data.long_market_value/
+  // realized_pnl/unrealized_pnl NICHT enthaltene Positionen), nicht bei
+  // "Verfügbares Kapital" (sonst würde es doppelt gezählt).
   const combinedBoundEur =
     saxo && usdToEur && data.long_market_value !== null && saxoBoundEur !== null
-      ? data.long_market_value * usdToEur + saxoBoundEur
+      ? data.long_market_value * usdToEur + saxoBoundEur + manualCapitalUsedUsd * usdToEur
       : null;
-  const combinedRealizedEur = saxo && usdToEur ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur : null;
+  const combinedRealizedEur = saxo && usdToEur
+    ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur + manualRealizedUsd * usdToEur
+    : null;
   const combinedUnrealizedEur =
     saxo && usdToEur
-      ? positions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0)
+      ? positions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0) +
+        manualUnrealizedUsd * usdToEur
       : null;
   const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
   const totalMaxOpenPositions = data.max_open_positions + (saxo?.max_open_positions ?? 0);
@@ -289,15 +335,54 @@ export default function Uebersicht() {
             color="gold"
             subtext={
               <span className="flex items-center gap-1.5 flex-wrap">
-                <span>{data.open_trades.length} Alpaca · {saxo?.open_trades.length ?? 0} Saxo</span>
+                <span>
+                  {data.open_trades.length} Alpaca · {saxo?.open_trades.length ?? 0} Saxo
+                  {manualOpenPositions.length > 0 ? ` · ${manualOpenPositions.length} Direkthandel` : ""}
+                </span>
               </span>
             }
           />
         </div>
       </div>
 
+      {/* Direkthandel-Kennzahlen (eigene Zeile analog Alpaca/Saxo oben) -
+          Aufgabe "Direkthandel in Übersicht/Performance einbinden",
+          2026-08-14. Kein "Verfügbares Kapital"-Kachel: Direkthandel hat
+          keinen eigenen Kapitaltopf, sondern zieht vom selben Alpaca-Cash
+          (data.cash oben) - eine eigene Kachel dafür würde denselben Betrag
+          nur ein zweites Mal zeigen. */}
+      <div>
+        <div className={rowHeading}>Direkthandel</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4">
+          <KPICard
+            label="Eingesetztes Kapital"
+            value={manualQuery.data ? fmtUsd(manualCapitalUsedUsd, 2) : manualQuery.isError ? "n/a" : "…"}
+            color="gold"
+            subtext="USD, in offenen Positionen"
+          />
+          <KPICard
+            label="Realisiert"
+            value={manualQuery.data ? fmtUsdSigned(manualRealizedUsd, 0) : manualQuery.isError ? "n/a" : "…"}
+            color={manualRealizedUsd >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Unrealisiert"
+            value={manualQuery.data ? fmtUsdSigned(manualUnrealizedUsd, 0) : manualQuery.isError ? "n/a" : "…"}
+            color={manualUnrealizedUsd >= 0 ? "gain" : "loss"}
+          />
+          <KPICard
+            label="Offene Positionen"
+            value={manualQuery.data ? String(manualOpenPositions.length) : manualQuery.isError ? "n/a" : "…"}
+            color="gold"
+          />
+        </div>
+      </div>
+
       {saxoQuery.isError && (
         <p className="text-xs text-loss">Saxo-Daten aktuell nicht verfügbar – Zeilen &bdquo;Saxo&ldquo;/&bdquo;Gesamt&ldquo; zeigen n/a.</p>
+      )}
+      {manualQuery.isError && (
+        <p className="text-xs text-loss">Direkthandel-Daten aktuell nicht verfügbar.</p>
       )}
 
       {totalCapital > 0 && (
@@ -459,6 +544,98 @@ export default function Uebersicht() {
                         <div className="h-[3px] bg-gold rounded-full" style={{ width: `${scorePct}%` }} />
                       </div>
                       <span className="text-xs text-gold font-semibold font-figures shrink-0">{t.rule_score}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Eigener, klar abgetrennter Bucket für Direkthandel-Positionen -
+          Aufgabe "Direkthandel in Übersicht/Performance einbinden",
+          2026-08-14: bewusst NICHT in obige "Offene Positionen"-Liste
+          gemischt (andere Datenquelle/Feldform, siehe ManualTrade vs.
+          CombinedOpenPosition in api.ts - kein trailing_sl/time_exit/mode).
+          Gleiches Desktop-Zeile/Mobile-Card-Muster wie oben, nur ohne die
+          bot-spezifischen Zusatzzeilen. */}
+      <div>
+        <div className="text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted border-b border-border pb-2 mb-3">
+          Direkthandel
+        </div>
+        {manualOpenPositions.length === 0 ? (
+          <p className="text-text-muted text-sm">Keine offenen Direkthandel-Positionen.</p>
+        ) : (
+          <div className="space-y-2">
+            {manualOpenPositions.map((t) => {
+              const currentValue = t.capital_used + (t.unrealized_pnl ?? 0);
+              return (
+                <div key={`manual-${t.id}`}>
+                  {/* Desktop: kompakte Zeile */}
+                  <div className="hidden md:block bg-bg-card border border-border rounded-card px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="font-medium flex items-center gap-1.5 min-w-0">
+                        <TickerLabel ticker={t.ticker} companyName={t.company_name} className="max-w-[220px]" />
+                        {directBadge()}
+                      </div>
+                      <div className={`font-figures text-sm ${gainLossClass(t.unrealized_pnl)}`}>
+                        {t.unrealized_pnl != null ? fmtMoneySigned(t.unrealized_pnl, "USD") : "–"}
+                        {t.unrealized_pnl_pct != null &&
+                          ` (${t.unrealized_pnl_pct >= 0 ? "+" : ""}${t.unrealized_pnl_pct.toFixed(1)}%)`}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-figures text-text-muted">
+                      <div>Entry: {fmtMoney(t.entry_price, "USD")}</div>
+                      <div>Aktuell: {fmtMoney(t.current_price, "USD")}</div>
+                      <div>SL: {fmtMoney(t.stop_loss_price, "USD")}</div>
+                      <div>TP: {fmtMoney(t.take_profit_price, "USD")}</div>
+                    </div>
+                    <div className="text-xs text-text-muted mt-1.5">
+                      Eingesetzt: {fmtMoney(t.capital_used, "USD")} → Aktueller Wert: {fmtMoney(currentValue, "USD")}
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                      {fmtMenge(t.quantity, 4)} Stück
+                      {t.rule_score_at_purchase != null && ` · Score ${t.rule_score_at_purchase}/100`}
+                    </div>
+                  </div>
+
+                  {/* Mobile: großes Card-Format */}
+                  <div className="md:hidden bg-bg-card border border-border rounded-card p-3">
+                    <TickerLabel ticker={t.ticker} companyName={t.company_name} className="font-semibold text-base block mb-1.5" />
+                    <div className="flex justify-between items-center mb-2">
+                      {directBadge()}
+                      <span className={`text-sm font-semibold font-figures ${gainLossClass(t.unrealized_pnl)}`}>
+                        {t.unrealized_pnl != null ? fmtMoneySigned(t.unrealized_pnl, "USD") : "–"}
+                        {t.unrealized_pnl_pct != null &&
+                          ` (${t.unrealized_pnl_pct >= 0 ? "+" : ""}${t.unrealized_pnl_pct.toFixed(1)}%)`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5 text-xs font-figures mb-2">
+                      <div>
+                        <span className="text-text-muted">Entry </span>
+                        <span>{fmtMoney(t.entry_price, "USD")}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">Aktuell </span>
+                        <span>{fmtMoney(t.current_price, "USD")}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">SL </span>
+                        <span className="text-loss">{fmtMoney(t.stop_loss_price, "USD")}</span>
+                      </div>
+                      <div>
+                        <span className="text-text-muted">TP </span>
+                        <span className="text-gain">{fmtMoney(t.take_profit_price, "USD")}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-text-muted mb-1">
+                      Eingesetzt: {fmtMoney(t.capital_used, "USD")} → Aktueller Wert: {fmtMoney(currentValue, "USD")}
+                    </div>
+                    <div className="text-[10px] text-text-muted">
+                      {fmtMenge(t.quantity, 4)} Stück
                     </div>
                   </div>
                 </div>

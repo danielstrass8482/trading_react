@@ -521,14 +521,17 @@ export type CombinedTradeEntry = {
   broker: "alpaca" | "saxo";
   currency: string;
   quantity: number;
-  entry_price: number;
+  // Direkthandel-Trades ohne gefüllten Kauf (FAILED_ENTRY) haben keinen
+  // entry_price/rule_score - beides deshalb nullable (Bot-Trades liefern
+  // hier immer einen Wert, siehe fromAlpacaTrade/fromSaxoTrade).
+  entry_price: number | null;
   exit_price: number | null;
   current_price: number | null;
   pnl: number | null;
   pnl_pct: number | null;
   unrealized_pnl: number | null;
   unrealized_pnl_pct: number | null;
-  rule_score: number;
+  rule_score: number | null;
   status: string;
   exit_grund: string;
   created_at: string;
@@ -538,6 +541,11 @@ export type CombinedTradeEntry = {
   llm_risks: string[];
   score_breakdown: ScoreBreakdown;
   sector: string | null;
+  // Direkthandel-Trades laufen technisch über Alpaca (broker="alpaca"),
+  // sind aber konzeptionell keine Bot-Trades - eigenes Flag statt einer
+  // Erweiterung von "broker", damit die bestehende Alpaca/Saxo-Unterscheidung
+  // unangetastet bleibt (siehe fromManualTrade weiter unten).
+  is_manual: boolean;
 };
 
 export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
@@ -553,6 +561,7 @@ export function fromAlpacaTrade(t: TradeHistoryEntry): CombinedTradeEntry {
     llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
     llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
     sector: t.sector ?? null,
+    is_manual: false,
   };
 }
 
@@ -567,6 +576,27 @@ export function fromSaxoTrade(t: SaxoTradeEntry): CombinedTradeEntry {
     llm_summary: t.llm_summary ?? null, llm_sentiment: t.llm_sentiment ?? null,
     llm_risks: t.llm_risks ?? [], score_breakdown: t.score_breakdown ?? {},
     sector: t.sector ?? null,
+    is_manual: false,
+  };
+}
+
+// Dritte Quelle für die Handelshistorie (Aufgabe "Direkthandel in Übersicht/
+// Performance einbinden", 2026-08-14) - rein clientseitige Zusammenführung,
+// siehe Docstring über CombinedTradeEntry. Direkthandel ist Alpaca-only
+// (broker/currency deshalb fest "alpaca"/"USD"), llm_summary/llm_risks/
+// score_breakdown gibt es für manuelle Trades nicht (kein LLM-Research-Schritt
+// beim manuellen Kauf, siehe active_trading.buy).
+export function fromManualTrade(t: ManualTrade): CombinedTradeEntry {
+  return {
+    ticker: t.ticker, company_name: t.company_name ?? null, broker: "alpaca", currency: "USD", quantity: t.quantity,
+    entry_price: t.entry_price, exit_price: t.exit_price, current_price: t.current_price,
+    pnl: t.pnl_usd, pnl_pct: t.pnl_pct,
+    unrealized_pnl: t.unrealized_pnl, unrealized_pnl_pct: t.unrealized_pnl_pct,
+    rule_score: t.rule_score_at_purchase, status: t.status, exit_grund: t.exit_grund,
+    created_at: t.created_at, closed_at: t.closed_at,
+    llm_summary: null, llm_sentiment: null, llm_risks: [], score_breakdown: {},
+    sector: t.sector ?? null,
+    is_manual: true,
   };
 }
 
