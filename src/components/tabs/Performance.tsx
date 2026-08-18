@@ -636,9 +636,9 @@ export default function Performance() {
     queryFn: () => api.get<SaxoBenchmark>("/api/saxo/benchmark", { params: { days: benchmarkDays } }).then((r) => r.data),
   });
 
-  // Handelshistorie (offen+geschlossen, beide Broker) – EINZIGE Quelle für
-  // sowohl die Kennzahlen-Kacheln oben als auch die Zusammenfassungs-Zeile
-  // unter der Tabelle (siehe aggregatePnl-Docstring oben für die Begründung).
+  // Handelshistorie (offen+geschlossen, beide Broker) – Quelle für die
+  // sichtbare Tabelle in TradeHistorySection (limitiert, reines UI-
+  // Pagination-Anliegen).
   const { data: alpacaHistory = [], isLoading: alpacaHistLoading } = useQuery({
     queryKey: ["trade-history", "alpaca"],
     queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { limit: 50 } }).then((r) => r.data),
@@ -669,9 +669,43 @@ export default function Performance() {
     return combined;
   }, [alpacaHistory, saxoHistory, manualHistory]);
 
+  // Fix (Folgeauftrag "KPI-Limit-Lücke", 2026-08-18): die Kennzahlen-Kacheln
+  // und die Zusammenfassungs-Zeile unter der Tabelle dürfen NICHT aus der
+  // limit=50-Liste oben berechnet werden - sobald ein Nutzer insgesamt (offen
+  // + geschlossen zusammen, das Limit greift VOR dem Status-Split) mehr als
+  // 50 Trades hat, fielen ältere realisierte Trades unbemerkt aus den
+  // Summen raus, obwohl sie real closed sind. Separate, ungekappte
+  // (`all_time=true`) Abfragen NUR für die Aggregation - die sichtbare
+  // Tabelle (TradeHistorySection, `trades={brokerFiltered}` unten) bleibt
+  // bewusst bei der limitierten Liste (reines UI-Pagination-Anliegen).
+  const { data: alpacaHistoryAll = [], isLoading: alpacaHistAllLoading } = useQuery({
+    queryKey: ["trade-history", "alpaca", "all-time"],
+    queryFn: () => api.get<TradeHistoryEntry[]>("/api/trades/history", { params: { all_time: true } }).then((r) => r.data),
+  });
+  const { data: saxoHistoryAll = [], isLoading: saxoHistAllLoading } = useQuery({
+    queryKey: ["trade-history", "saxo", "all-time"],
+    queryFn: () => api.get<SaxoTradeEntry[]>("/api/saxo/trades/history", { params: { all_time: true } }).then((r) => r.data),
+  });
+  const { data: manualHistoryAll = [], isLoading: manualHistAllLoading } = useQuery({
+    queryKey: ["manual-trades", "all-time"],
+    queryFn: () => api.get<ManualTrade[]>("/api/active/manual-trades", { params: { all_time: true } }).then((r) => r.data),
+  });
+  const kpiLoading = alpacaHistAllLoading || saxoHistAllLoading || manualHistAllLoading;
+
+  const mergedAll = useMemo(() => {
+    const combined: CombinedTradeEntry[] = [
+      ...alpacaHistoryAll.map(fromAlpacaTrade),
+      ...saxoHistoryAll.map(fromSaxoTrade),
+      ...manualHistoryAll.map(fromManualTrade),
+    ];
+    combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return combined;
+  }, [alpacaHistoryAll, saxoHistoryAll, manualHistoryAll]);
+
   const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
-  const closed = brokerFiltered.filter((t) => t.pnl !== null);
-  const offen = brokerFiltered.filter((t) => t.status === "OPEN");
+  const brokerFilteredAll = brokerFilter === "alle" ? mergedAll : mergedAll.filter((t) => t.broker === brokerFilter);
+  const closed = brokerFilteredAll.filter((t) => t.pnl !== null);
+  const offen = brokerFilteredAll.filter((t) => t.status === "OPEN");
   const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;
   const verlierer = closed.length - gewinner;
   const winRate = closed.length ? (gewinner / closed.length) * 100 : null;
@@ -810,7 +844,7 @@ export default function Performance() {
       <div className="grid grid-cols-2 md:grid-cols-7 gap-2 md:gap-4">
         <KPICard
           label="Trades gesamt"
-          value={historyLoading ? "…" : String(brokerFiltered.length)}
+          value={kpiLoading ? "…" : String(brokerFilteredAll.length)}
           color="neutral"
         />
         <KPICard

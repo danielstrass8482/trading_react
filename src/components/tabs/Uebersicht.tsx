@@ -212,16 +212,32 @@ export default function Uebersicht() {
   // "Realisiert" separat addiert (eigene, in data.long_market_value/
   // realized_pnl/unrealized_pnl NICHT enthaltene Positionen), nicht bei
   // "Verfügbares Kapital" (sonst würde es doppelt gezählt).
+  //
+  // Fix (Folgeauftrag "combined-Werte ohne Saxo", 2026-08-18): Alpaca +
+  // Direkthandel MÜSSEN unabhängig davon summiert werden, ob Saxo verbunden
+  // ist bzw. ein USD/EUR-Kurs geladen ist - vorher hingen ALLE combined*-
+  // Werte an `saxo && usdToEur`, wodurch Direkthandel bei fehlendem Saxo
+  // komplett aus GESAMT verschwand (nicht nur der Saxo-Anteil). Jetzt: die
+  // Alpaca+Direkthandel-Summe (USD) wird IMMER gebildet, der Saxo-Anteil
+  // (bereits EUR) kommt nur additiv dazu wenn vorhanden. Die EUR-Umrechnung
+  // selbst braucht weiterhin einen Kurs (kommt aktuell nur von Saxo) - ohne
+  // Kurs zeigt die Kachel die reine USD-Summe (siehe fmtUsdSigned-Fallback
+  // unten), NICHT mehr nur den Alpaca-Anteil ohne Direkthandel.
+  const alpacaPlusManualBoundUsd = (data.long_market_value ?? 0) + manualCapitalUsedUsd;
+  const alpacaPlusManualRealizedUsd = data.realized_pnl + manualRealizedUsd;
+  const alpacaPlusManualUnrealizedUsd = unrealizedPnlUsdOnly + manualUnrealizedUsd;
   const combinedBoundEur =
-    saxo && usdToEur && data.long_market_value !== null && saxoBoundEur !== null
-      ? data.long_market_value * usdToEur + saxoBoundEur + manualCapitalUsedUsd * usdToEur
+    usdToEur !== null && data.long_market_value !== null
+      ? alpacaPlusManualBoundUsd * usdToEur + (saxoBoundEur ?? 0)
       : null;
-  const combinedRealizedEur = saxo && usdToEur
-    ? data.realized_pnl * usdToEur + saxo.realized_pnl_eur + manualRealizedUsd * usdToEur
-    : null;
+  const combinedRealizedEur =
+    usdToEur !== null ? alpacaPlusManualRealizedUsd * usdToEur + (saxo?.realized_pnl_eur ?? 0) : null;
   const combinedUnrealizedEur =
-    saxo && usdToEur
-      ? positions.reduce((sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo.fx_rates_to_eur[p.currency] ?? 1), 0) +
+    usdToEur !== null
+      ? positions.reduce(
+          (sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo?.fx_rates_to_eur[p.currency] ?? 1),
+          0,
+        ) +
         manualUnrealizedUsd * usdToEur
       : null;
   const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
@@ -313,20 +329,34 @@ export default function Uebersicht() {
           />
           <KPICard
             label="Gebunden in Positionen ≈"
-            value={combinedBoundEur !== null ? fmtMoney(combinedBoundEur, "EUR", 0) : "…"}
+            value={
+              combinedBoundEur !== null
+                ? fmtMoney(combinedBoundEur, "EUR", 0)
+                : data.long_market_value !== null
+                  ? fmtUsd(alpacaPlusManualBoundUsd, 0)
+                  : "…"
+            }
             color="neutral"
             subtext={fxSubtext}
           />
           <KPICard
             label="Realisiert ≈"
-            value={combinedRealizedEur !== null ? fmtMoneySigned(combinedRealizedEur, "EUR", 0) : fmtUsdSigned(data.realized_pnl, 0)}
-            color={(combinedRealizedEur ?? data.realized_pnl) >= 0 ? "gain" : "loss"}
+            value={
+              combinedRealizedEur !== null
+                ? fmtMoneySigned(combinedRealizedEur, "EUR", 0)
+                : fmtUsdSigned(alpacaPlusManualRealizedUsd, 0)
+            }
+            color={(combinedRealizedEur ?? alpacaPlusManualRealizedUsd) >= 0 ? "gain" : "loss"}
             subtext={fxSubtext}
           />
           <KPICard
             label="Unrealisiert ≈"
-            value={combinedUnrealizedEur !== null ? fmtMoneySigned(combinedUnrealizedEur, "EUR", 0) : fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
-            color={(combinedUnrealizedEur ?? unrealizedPnlUsdOnly) >= 0 ? "gain" : "loss"}
+            value={
+              combinedUnrealizedEur !== null
+                ? fmtMoneySigned(combinedUnrealizedEur, "EUR", 0)
+                : fmtUsdSigned(alpacaPlusManualUnrealizedUsd, 0)
+            }
+            color={(combinedUnrealizedEur ?? alpacaPlusManualUnrealizedUsd) >= 0 ? "gain" : "loss"}
             subtext={fxSubtext}
           />
           <KPICard
