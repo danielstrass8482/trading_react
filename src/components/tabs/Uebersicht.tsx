@@ -355,8 +355,19 @@ export default function Uebersicht() {
           <KPICard
             compact
             label="Gebühren"
-            value={saxo ? fmtMoney(saxo.fees_eur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
+            value={
+              saxo
+                ? `${saxo.fees_exit_unknown ? "≥ " : ""}${fmtMoney(saxo.fees_eur, "EUR", 2)}`
+                : saxoQuery.isError
+                  ? "n/a"
+                  : "…"
+            }
             color="neutral"
+            subtext={
+              saxo?.fees_exit_unknown
+                ? "Mindestbetrag: Exit-Gebühr für ältere Trades unbekannt (Saxo-Retention-Fenster abgelaufen)"
+                : undefined
+            }
           />
           <KPICard
             compact
@@ -415,9 +426,11 @@ export default function Uebersicht() {
           <KPICard
             compact
             label="Gebühren ≈"
-            value={combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)}
+            value={`${saxo?.fees_exit_unknown ? "≥ " : ""}${
+              combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)
+            }`}
             color="neutral"
-            subtext={fxSubtext}
+            subtext={saxo?.fees_exit_unknown ? `Mindestbetrag, ${fxSubtext}` : fxSubtext}
           />
           <KPICard
             compact

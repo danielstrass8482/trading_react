@@ -167,6 +167,10 @@ export type SaxoOverview = {
   // entry_commission_eur + exit_commission_eur über ALLE Trades (auch
   // offene), echter Wert (Saxo berechnet tatsächlich Kommissionen).
   fees_eur: number;
+  // Backfill 2026-08-19: 7 historische Trades haben eine unbekannte Exit-
+  // Kommission (Saxo-Retention-Fenster abgelaufen) - wenn true ist fees_eur
+  // eine Untergrenze, kein exakter Wert (siehe Uebersicht.tsx "Gebühren ≥").
+  fees_exit_unknown: boolean;
   daily_pnl_eur: number;
   open_trades: SaxoOpenTrade[];
   daily_trades: number;
