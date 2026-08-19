@@ -210,6 +210,14 @@ export default function Uebersicht() {
   const manualRealizedUsd = manualTrades
     .filter((t) => t.pnl_usd !== null)
     .reduce((sum, t) => sum + (t.pnl_usd ?? 0), 0);
+  // Gebühren-Kachel Direkthandel (Kommissionslücke-Diagnose 2026-08-19) -
+  // bleibt 0 (Alpaca-Broker, siehe api.ts ManualTrade-Kommentar), gleiches
+  // clientseitiges Summierungsprinzip wie manualRealizedUsd/manualUnrealizedUsd
+  // oben - über ALLE Trades (auch offene), analog fees_usd/fees_eur-Scope.
+  const manualFeesUsd = manualTrades.reduce(
+    (sum, t) => sum + (t.entry_commission_usd ?? 0) + (t.exit_commission_usd ?? 0),
+    0,
+  );
 
   // Näherungsweise EUR-Gesamtsumme über zwei komplett getrennte Konten –
   // NIE als ein einziger, primärer Wert dargestellt (siehe Gesamt-Zeile
@@ -251,44 +259,63 @@ export default function Uebersicht() {
         ) +
         manualUnrealizedUsd * usdToEur
       : null;
+  // Gebühren ≈ (Gesamt-Zeile) - gleiche Näherungs-Logik wie die anderen
+  // combined*-Werte oben: Alpaca+Direkthandel (USD) immer summiert, Saxo-
+  // Anteil (bereits EUR) nur additiv wenn vorhanden und ein Kurs geladen ist.
+  const alpacaPlusManualFeesUsd = data.fees_usd + manualFeesUsd;
+  const combinedFeesEur = usdToEur !== null ? alpacaPlusManualFeesUsd * usdToEur + (saxo?.fees_eur ?? 0) : null;
   const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
   const totalMaxOpenPositions = data.max_open_positions + (saxo?.max_open_positions ?? 0);
 
-  const tileGrid = "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-4";
+  const tileGrid = "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-4";
   const rowHeading = "text-[0.72rem] font-semibold tracking-wider uppercase text-text-muted mb-3";
 
   return (
     <div className="space-y-6">
       {/* Drei Kachel-Reihen (Alpaca / Saxo / Gesamt) mit jeweils denselben
-          fünf Kennzahlen (Kapital/Gebunden/Realisiert/Unrealisiert/Offene
-          Positionen) – siehe Modul-Auftrag "Drei-Zeilen-Layout". Gesamt ist
-          durchgängig mit "≈" markiert (Näherung über zwei Währungsräume),
-          Offene Positionen dort als reine Summe ohne "≈" (echte Zahl). */}
+          sechs Kennzahlen (Kapital/Gebunden/Realisiert/Unrealisiert/Gebühren/
+          Offene Positionen) – siehe Modul-Auftrag "Drei-Zeilen-Layout",
+          Gebühren-Kachel ergänzt (Kommissionslücke-Diagnose 2026-08-19).
+          Gesamt ist durchgängig mit "≈" markiert (Näherung über zwei
+          Währungsräume), Offene Positionen dort als reine Summe ohne "≈"
+          (echte Zahl). */}
       <div>
         <div className={rowHeading}>Alpaca</div>
         <div className={tileGrid}>
           <KPICard
+            compact
             label="Verfügbares Kapital"
             value={data.cash !== null ? fmtUsd(data.cash, 2) : "–"}
             color="gold"
             subtext="Cash, für neue Trades frei"
           />
           <KPICard
+            compact
             label="Gebunden in Positionen"
             value={data.long_market_value !== null ? fmtUsd(data.long_market_value, 2) : "–"}
             color="neutral"
           />
           <KPICard
+            compact
             label="Realisiert"
             value={fmtUsdSigned(data.realized_pnl, 0)}
             color={data.realized_pnl >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
             label="Unrealisiert"
             value={fmtUsdSigned(unrealizedPnlUsdOnly, 0)}
             color={unrealizedPnlUsdOnly >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
+            label="Gebühren"
+            value={fmtUsd(data.fees_usd, 2)}
+            color="neutral"
+            subtext="0 USD, Alpaca berechnet aktuell keine Kommission"
+          />
+          <KPICard
+            compact
             label="Offene Positionen"
             value={`${data.open_trades.length}/${data.max_open_positions}`}
             color="gold"
@@ -301,27 +328,38 @@ export default function Uebersicht() {
         <div className={rowHeading}>Saxo</div>
         <div className={tileGrid}>
           <KPICard
+            compact
             label="Verfügbares Kapital"
             value={saxoAvailableEur !== null ? fmtMoney(saxoAvailableEur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
             color="gold"
             subtext="EUR, für neue Trades frei"
           />
           <KPICard
+            compact
             label="Gebunden in Positionen"
             value={saxoBoundEur !== null ? fmtMoney(saxoBoundEur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
             color="neutral"
           />
           <KPICard
+            compact
             label="Realisiert"
             value={saxo ? fmtMoneySigned(saxo.realized_pnl_eur, "EUR", 0) : saxoQuery.isError ? "n/a" : "…"}
             color={saxo && saxo.realized_pnl_eur >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
             label="Unrealisiert"
             value={saxoUnrealizedEur !== null ? fmtMoneySigned(saxoUnrealizedEur, "EUR", 0) : saxoQuery.isError ? "n/a" : "…"}
             color={saxoUnrealizedEur !== null && saxoUnrealizedEur >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
+            label="Gebühren"
+            value={saxo ? fmtMoney(saxo.fees_eur, "EUR", 2) : saxoQuery.isError ? "n/a" : "…"}
+            color="neutral"
+          />
+          <KPICard
+            compact
             label="Offene Positionen"
             value={saxo ? `${saxo.open_trades.length}/${saxo.max_open_positions}` : saxoQuery.isError ? "n/a" : "…"}
             color="gold"
@@ -333,12 +371,14 @@ export default function Uebersicht() {
         <div className={rowHeading}>Gesamt</div>
         <div className={tileGrid}>
           <KPICard
+            compact
             label="Verfügbares Kapital ≈"
             value={combinedAvailableEur !== null ? fmtMoney(combinedAvailableEur, "EUR", 0) : "…"}
             color="gold"
             subtext={fxSubtext}
           />
           <KPICard
+            compact
             label="Gebunden in Positionen ≈"
             value={
               combinedBoundEur !== null
@@ -351,6 +391,7 @@ export default function Uebersicht() {
             subtext={fxSubtext}
           />
           <KPICard
+            compact
             label="Realisiert ≈"
             value={
               combinedRealizedEur !== null
@@ -361,6 +402,7 @@ export default function Uebersicht() {
             subtext={fxSubtext}
           />
           <KPICard
+            compact
             label="Unrealisiert ≈"
             value={
               combinedUnrealizedEur !== null
@@ -371,6 +413,14 @@ export default function Uebersicht() {
             subtext={fxSubtext}
           />
           <KPICard
+            compact
+            label="Gebühren ≈"
+            value={combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)}
+            color="neutral"
+            subtext={fxSubtext}
+          />
+          <KPICard
+            compact
             label="Offene Positionen"
             value={`${positions.length}/${totalMaxOpenPositions}`}
             color="gold"
@@ -388,11 +438,11 @@ export default function Uebersicht() {
 
       {/* Direkthandel-Kennzahlen (eigene Zeile analog Alpaca/Saxo oben) -
           Aufgabe "Direkthandel in Übersicht/Performance einbinden",
-          2026-08-14, Feld-Parität-Fix 2026-08-19: jetzt dieselben fünf
+          2026-08-14, Feld-Parität-Fix 2026-08-19: jetzt dieselben sechs
           Kacheln wie Alpaca/Saxo (Verfügbares Kapital, Gebunden in
-          Positionen, Realisiert, Unrealisiert, Offene Positionen), damit
-          alle drei Zeilen auf einen Blick vergleichbar sind. "Verfügbares
-          Kapital" ist das gemeinsame Active-Trading-Restbudget (EIN Topf mit
+          Positionen, Realisiert, Unrealisiert, Gebühren, Offene Positionen),
+          damit alle drei Zeilen auf einen Blick vergleichbar sind.
+          "Verfügbares Kapital" ist das gemeinsame Active-Trading-Restbudget (EIN Topf mit
           dem Bot, kein separates Direkthandel-Budget) - kommt direkt von
           /api/active/budget, das dieselbe Formel liefert, gegen die
           active_trading.buy() bereits vor jeder Order prüft. */}
@@ -400,27 +450,39 @@ export default function Uebersicht() {
         <div className={rowHeading}>Direkthandel</div>
         <div className={tileGrid}>
           <KPICard
+            compact
             label="Verfügbares Kapital"
             value={budgetQuery.data ? fmtUsd(budgetQuery.data.remaining_budget, 2) : budgetQuery.isError ? "n/a" : "…"}
             color="gold"
             subtext="USD, gemeinsamer Topf mit dem Bot"
           />
           <KPICard
+            compact
             label="Gebunden in Positionen"
             value={manualQuery.data ? fmtUsd(manualCapitalUsedUsd, 2) : manualQuery.isError ? "n/a" : "…"}
             color="neutral"
           />
           <KPICard
+            compact
             label="Realisiert"
             value={manualQuery.data ? fmtUsdSigned(manualRealizedUsd, 0) : manualQuery.isError ? "n/a" : "…"}
             color={manualRealizedUsd >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
             label="Unrealisiert"
             value={manualQuery.data ? fmtUsdSigned(manualUnrealizedUsd, 0) : manualQuery.isError ? "n/a" : "…"}
             color={manualUnrealizedUsd >= 0 ? "gain" : "loss"}
           />
           <KPICard
+            compact
+            label="Gebühren"
+            value={manualQuery.data ? fmtUsd(manualFeesUsd, 2) : manualQuery.isError ? "n/a" : "…"}
+            color="neutral"
+            subtext="0 USD, gleicher Alpaca-Broker wie der Bot"
+          />
+          <KPICard
+            compact
             label="Offene Positionen"
             value={manualQuery.data ? String(manualOpenPositions.length) : manualQuery.isError ? "n/a" : "…"}
             color="gold"

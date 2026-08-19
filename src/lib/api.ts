@@ -102,6 +102,11 @@ export type Overview = {
   long_market_value: number | null; // gebunden in offenen Positionen (Marktwert)
   unrealized_pnl: number | null;    // Summe unrealized_pl aller offenen Alpaca-Positionen (Broker-Wahrheit)
   realized_pnl: number;
+  // Gebühren-Kachel (Kommissionslücke-Diagnose 2026-08-19) - Summe aus
+  // entry_commission_usd + exit_commission_usd über ALLE Trades dieses
+  // Nutzers (auch offene). Bei Alpaca aktuell dauerhaft 0 (siehe
+  // trading_bot/database.py Trade.entry_commission_usd-Kommentar).
+  fees_usd: number;
   open_trades: OpenTrade[];
   daily_trades: number;
   max_trades_per_day: number;
@@ -157,6 +162,11 @@ export type SaxoOverview = {
   // PHIA.AS-Sanity-Check 2026-07-29).
   cash_available_eur: number;
   realized_pnl_eur: number;
+  // Gebühren-Kachel (Kommissionslücke-Diagnose 2026-08-19, siehe
+  // trading_bot_saxo/database.py::get_total_fees_eur) - Summe aus
+  // entry_commission_eur + exit_commission_eur über ALLE Trades (auch
+  // offene), echter Wert (Saxo berechnet tatsächlich Kommissionen).
+  fees_eur: number;
   daily_pnl_eur: number;
   open_trades: SaxoOpenTrade[];
   daily_trades: number;
@@ -870,6 +880,10 @@ export type ManualTrade = {
   current_price: number | null;
   unrealized_pnl: number | null;
   unrealized_pnl_pct: number | null;
+  // Gebühren-Kachel-Parität (Kommissionslücke-Diagnose 2026-08-19) - bleibt
+  // 0 (Direkthandel läuft über denselben Alpaca-Broker wie der Bot).
+  entry_commission_usd: number;
+  exit_commission_usd: number;
 };
 
 // GET /api/active/budget - liefert dieselbe Formel, gegen die
