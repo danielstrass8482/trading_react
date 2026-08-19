@@ -87,11 +87,23 @@ function formatDatum(iso: string): string {
   return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
 }
 
+// "aktiv" filtert NICHT auf t.broker (Direkthandel-Trades tragen broker:
+// "alpaca", siehe fromManualTrade in api.ts - technisch derselbe Broker,
+// konzeptionell aber kein Bot-Trade), sondern auf is_manual - siehe
+// filterByBroker() unten. Label konsistent mit dem DIREKT-Badge-Wortlaut
+// oben, Filter-Key bewusst "aktiv" (matcht den Sidebar-Tab-Namen).
 const BROKER_FILTERS = [
   { key: "alle", label: "Alle" },
   { key: "alpaca", label: "Alpaca" },
   { key: "saxo", label: "Saxo" },
+  { key: "aktiv", label: "Aktiv" },
 ] as const;
+
+function filterByBroker(trades: CombinedTradeEntry[], filter: (typeof BROKER_FILTERS)[number]["key"]): CombinedTradeEntry[] {
+  if (filter === "alle") return trades;
+  if (filter === "aktiv") return trades.filter((t) => t.is_manual);
+  return trades.filter((t) => t.broker === filter);
+}
 
 function brokerBadgeSmall(broker: "alpaca" | "saxo") {
   return (
@@ -702,8 +714,8 @@ export default function Performance() {
     return combined;
   }, [alpacaHistoryAll, saxoHistoryAll, manualHistoryAll]);
 
-  const brokerFiltered = brokerFilter === "alle" ? merged : merged.filter((t) => t.broker === brokerFilter);
-  const brokerFilteredAll = brokerFilter === "alle" ? mergedAll : mergedAll.filter((t) => t.broker === brokerFilter);
+  const brokerFiltered = filterByBroker(merged, brokerFilter);
+  const brokerFilteredAll = filterByBroker(mergedAll, brokerFilter);
   const closed = brokerFilteredAll.filter((t) => t.pnl !== null);
   const offen = brokerFilteredAll.filter((t) => t.status === "OPEN");
   const gewinner = closed.filter((t) => (t.pnl ?? 0) > 0).length;

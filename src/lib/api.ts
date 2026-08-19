@@ -872,6 +872,15 @@ export type ManualTrade = {
   unrealized_pnl_pct: number | null;
 };
 
+// GET /api/active/budget - liefert dieselbe Formel, gegen die
+// active_trading.buy() bereits vor jeder Order prüft (siehe
+// broker.get_active_trading_remaining_budget), fürs Übersicht-Kachel-Feld
+// "Verfügbares Kapital" bei Direkthandel.
+export type ActiveBudget = {
+  effective_budget: number;
+  remaining_budget: number;
+};
+
 export type ActiveBuyRequest = {
   ticker: string;
   client_order_id: string;

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { TrendingUp, TrendingDown, Minus, Bot } from "lucide-react";
 import {
-  api, Overview, SaxoOverview, CombinedOpenPosition, fromAlpacaOpenTrade, fromSaxoOpenTrade, ManualTrade,
+  api, Overview, SaxoOverview, CombinedOpenPosition, fromAlpacaOpenTrade, fromSaxoOpenTrade, ManualTrade, ActiveBudget,
 } from "@/lib/api";
 import KPICard from "@/components/ui/KPICard";
 import { KPISkeletonRow, CardSkeleton } from "@/components/ui/Skeleton";
@@ -128,6 +128,17 @@ export default function Uebersicht() {
   const manualQuery = useQuery({
     queryKey: ["manual-trades"],
     queryFn: () => api.get<ManualTrade[]>("/api/active/manual-trades", { params: { limit: 50 } }).then((r) => r.data),
+    refetchInterval: 60_000,
+  });
+
+  // Gleiche Degradations-Logik wie saxoQuery/manualQuery oben - "Verfügbares
+  // Kapital" zeigt bei Fehler "n/a" statt die ganze Direkthandel-Zeile zu
+  // blockieren. Liest /api/active/budget, das dieselbe Formel zurückgibt,
+  // gegen die active_trading.buy() bereits vor jeder Order prüft (siehe
+  // broker.get_active_trading_remaining_budget) - keine eigene Neuberechnung.
+  const budgetQuery = useQuery({
+    queryKey: ["active-budget"],
+    queryFn: () => api.get<ActiveBudget>("/api/active/budget").then((r) => r.data),
     refetchInterval: 60_000,
   });
 
@@ -377,18 +388,27 @@ export default function Uebersicht() {
 
       {/* Direkthandel-Kennzahlen (eigene Zeile analog Alpaca/Saxo oben) -
           Aufgabe "Direkthandel in Übersicht/Performance einbinden",
-          2026-08-14. Kein "Verfügbares Kapital"-Kachel: Direkthandel hat
-          keinen eigenen Kapitaltopf, sondern zieht vom selben Alpaca-Cash
-          (data.cash oben) - eine eigene Kachel dafür würde denselben Betrag
-          nur ein zweites Mal zeigen. */}
+          2026-08-14, Feld-Parität-Fix 2026-08-19: jetzt dieselben fünf
+          Kacheln wie Alpaca/Saxo (Verfügbares Kapital, Gebunden in
+          Positionen, Realisiert, Unrealisiert, Offene Positionen), damit
+          alle drei Zeilen auf einen Blick vergleichbar sind. "Verfügbares
+          Kapital" ist das gemeinsame Active-Trading-Restbudget (EIN Topf mit
+          dem Bot, kein separates Direkthandel-Budget) - kommt direkt von
+          /api/active/budget, das dieselbe Formel liefert, gegen die
+          active_trading.buy() bereits vor jeder Order prüft. */}
       <div>
         <div className={rowHeading}>Direkthandel</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:gap-4">
+        <div className={tileGrid}>
           <KPICard
-            label="Eingesetztes Kapital"
-            value={manualQuery.data ? fmtUsd(manualCapitalUsedUsd, 2) : manualQuery.isError ? "n/a" : "…"}
+            label="Verfügbares Kapital"
+            value={budgetQuery.data ? fmtUsd(budgetQuery.data.remaining_budget, 2) : budgetQuery.isError ? "n/a" : "…"}
             color="gold"
-            subtext="USD, in offenen Positionen"
+            subtext="USD, gemeinsamer Topf mit dem Bot"
+          />
+          <KPICard
+            label="Gebunden in Positionen"
+            value={manualQuery.data ? fmtUsd(manualCapitalUsedUsd, 2) : manualQuery.isError ? "n/a" : "…"}
+            color="neutral"
           />
           <KPICard
             label="Realisiert"
@@ -413,6 +433,9 @@ export default function Uebersicht() {
       )}
       {manualQuery.isError && (
         <p className="text-xs text-loss">Direkthandel-Daten aktuell nicht verfügbar.</p>
+      )}
+      {budgetQuery.isError && (
+        <p className="text-xs text-loss">Direkthandel-Restbudget aktuell nicht verfügbar.</p>
       )}
 
       {totalCapital > 0 && (
