@@ -256,14 +256,16 @@ export default function Uebersicht() {
   const saxoRealizedDisplayEur = saxo ? (saxo.realized_pnl_estimated_eur ?? saxo.realized_pnl_eur) : null;
   const combinedRealizedEur =
     usdToEur !== null ? alpacaPlusManualRealizedUsd * usdToEur + (saxoRealizedDisplayEur ?? 0) : null;
+  // Fix 2026-08-21 (Diagnose "Alpaca UNREALISIERT-Diskrepanz"): vorher wurde
+  // hier aus der Positionsliste (`positions`, u.a. yfinance-basiert)
+  // neu aufsummiert statt wie combinedRealizedEur/combinedFeesEur die
+  // bereits vorhandene, korrekte Kachel-Quelle (alpacaPlusManualUnrealizedUsd,
+  // selbst auf unrealizedPnlUsdOnly = data.unrealized_pnl basierend, siehe
+  // oben) zu verwenden – dadurch konnten GESAMT und die Alpaca-Sektions-
+  // Kachel auf derselben Seite unterschiedliche Zahlen zeigen. Jetzt exakt
+  // dieselbe Zahl (kein zweiter, potenziell abweichender Rechenweg mehr).
   const combinedUnrealizedEur =
-    usdToEur !== null
-      ? positions.reduce(
-          (sum, p) => sum + p.unrealized_pnl * (p.currency === "EUR" ? 1 : saxo?.fx_rates_to_eur[p.currency] ?? 1),
-          0,
-        ) +
-        manualUnrealizedUsd * usdToEur
-      : null;
+    usdToEur !== null ? alpacaPlusManualUnrealizedUsd * usdToEur + (saxoUnrealizedEur ?? 0) : null;
   // Gebühren ≈ (Gesamt-Zeile) - gleiche Näherungs-Logik wie die anderen
   // combined*-Werte oben: Alpaca+Direkthandel (USD) immer summiert, Saxo-
   // Anteil (bereits EUR) nur additiv wenn vorhanden und ein Kurs geladen ist.
