@@ -276,6 +276,11 @@ export default function Uebersicht() {
   // fees_usd/entry_commission_usd-Docstrings in api.ts), daher hier bewusst
   // 1:1 der Saxo-Wert ohne weitere Kombinationslogik.
   const reconciledFeesEur = saxo?.fees_reconciliation?.total_fees_eur ?? null;
+  // Kontobasierte Gesamtschätzung, GESAMT-Zeile (Aufgabe 2026-08-21 "Gebühren-
+  // Kachel Hauptzahl tauschen") - gleiche Kombinationslogik wie combinedFeesEur
+  // oben, nur mit reconciledFeesEur statt saxo.fees_eur als Saxo-Anteil.
+  const combinedFeesReconciledEur =
+    usdToEur !== null && reconciledFeesEur !== null ? alpacaPlusManualFeesUsd * usdToEur + reconciledFeesEur : null;
   const RECONCILIATION_TOOLTIP =
     "Näherung aus dem Kontostand-Abgleich: aktueller Saxo-Kontowert minus " +
     "Ein-/Auszahlungen minus reine Kursdifferenz (ohne jede Kommission) aller " +
@@ -391,23 +396,29 @@ export default function Uebersicht() {
             label="Gebühren"
             value={
               saxo
-                ? `${saxo.fees_exit_unknown ? "≥ " : ""}${fmtMoney(saxo.fees_eur, "EUR", 2)}`
+                ? reconciledFeesEur !== null
+                  ? `≈ ${fmtMoney(reconciledFeesEur, "EUR", 2)}`
+                  : `${saxo.fees_exit_unknown ? "≥ " : ""}${fmtMoney(saxo.fees_eur, "EUR", 2)}`
                 : saxoQuery.isError
                   ? "n/a"
                   : "…"
             }
             color="neutral"
             subtext={
-              <>
-                {saxo?.fees_exit_unknown && (
-                  <div>Mindestbetrag: Exit-Gebühr für ältere Trades unbekannt (Saxo-Retention-Fenster abgelaufen)</div>
-                )}
-                {reconciledFeesEur !== null && (
-                  <div title={RECONCILIATION_TOOLTIP}>
-                    Kontobasierte Schätzung: ≈ {fmtMoney(reconciledFeesEur, "EUR", 2)}
-                  </div>
-                )}
-              </>
+              saxo && (
+                <>
+                  {reconciledFeesEur !== null ? (
+                    <div title={RECONCILIATION_TOOLTIP}>
+                      Bekannte Mindestsumme (verifiziert): {saxo.fees_exit_unknown ? "≥ " : ""}
+                      {fmtMoney(saxo.fees_eur, "EUR", 2)}
+                    </div>
+                  ) : (
+                    saxo.fees_exit_unknown && (
+                      <div>Mindestbetrag: Exit-Gebühr für ältere Trades unbekannt (Saxo-Retention-Fenster abgelaufen)</div>
+                    )
+                  )}
+                </>
+              )
             }
           />
           <KPICard
@@ -474,16 +485,21 @@ export default function Uebersicht() {
           <KPICard
             compact
             label="Gebühren ≈"
-            value={`${saxo?.fees_exit_unknown ? "≥ " : ""}${
-              combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)
-            }`}
+            value={
+              combinedFeesReconciledEur !== null
+                ? `≈ ${fmtMoney(combinedFeesReconciledEur, "EUR", 2)}`
+                : `${saxo?.fees_exit_unknown ? "≥ " : ""}${
+                    combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)
+                  }`
+            }
             color="neutral"
             subtext={
               <>
-                <div>{saxo?.fees_exit_unknown ? `Mindestbetrag, ${fxSubtext}` : fxSubtext}</div>
-                {reconciledFeesEur !== null && (
+                <div>{combinedFeesReconciledEur === null && saxo?.fees_exit_unknown ? `Mindestbetrag, ${fxSubtext}` : fxSubtext}</div>
+                {combinedFeesReconciledEur !== null && combinedFeesEur !== null && (
                   <div title={`${RECONCILIATION_TOOLTIP} Nur Saxo - Alpaca berechnet nachweislich keine Kommission.`}>
-                    Kontobasierte Schätzung: ≈ {fmtMoney(reconciledFeesEur, "EUR", 2)}
+                    Bekannte Mindestsumme (verifiziert): {saxo?.fees_exit_unknown ? "≥ " : ""}
+                    {fmtMoney(combinedFeesEur, "EUR", 2)}
                   </div>
                 )}
               </>
