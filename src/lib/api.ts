@@ -171,6 +171,23 @@ export type SaxoOverview = {
   // Kommission (Saxo-Retention-Fenster abgelaufen) - wenn true ist fees_eur
   // eine Untergrenze, kein exakter Wert (siehe Uebersicht.tsx "Gebühren ≥").
   fees_exit_unknown: boolean;
+  // Kontobasierte Gesamtschätzung ALLER Gebühren (Reconciliation-Aufgabe
+  // 2026-08-21, siehe trading_bot_saxo/broker_saxo.py::get_fee_reconciliation_eur)
+  // - unabhängige zweite Schätzung DERSELBEN Kennzahl wie fees_eur (alle
+  // Trades, offen+geschlossen), aus dem Kontostand-Abgleich statt aus
+  // einzelnen Trade-Feldern. null wenn der zusätzliche Live-Call zu Saxo
+  // fehlgeschlagen ist (bewusst kein Fallback-Wert, siehe Backend-Docstring).
+  fees_reconciliation: {
+    total_value_eur: number;
+    deposits_eur: number;
+    withdrawals_eur: number;
+    gross_pnl_closed_eur: number;
+    gross_pnl_open_eur: number;
+    economic_pnl_eur: number;
+    known_fees_floor_eur: number;
+    open_positions_count: number;
+    total_fees_eur: number;
+  } | null;
   daily_pnl_eur: number;
   open_trades: SaxoOpenTrade[];
   daily_trades: number;

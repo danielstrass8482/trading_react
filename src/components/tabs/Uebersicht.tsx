@@ -264,6 +264,17 @@ export default function Uebersicht() {
   // Anteil (bereits EUR) nur additiv wenn vorhanden und ein Kurs geladen ist.
   const alpacaPlusManualFeesUsd = data.fees_usd + manualFeesUsd;
   const combinedFeesEur = usdToEur !== null ? alpacaPlusManualFeesUsd * usdToEur + (saxo?.fees_eur ?? 0) : null;
+  // Kontobasierte Gesamtschätzung (Gesamt-Zeile) - nur Saxo hat diese
+  // Unsicherheit (Alpaca berechnet nachweislich 0 Kommission, siehe
+  // fees_usd/entry_commission_usd-Docstrings in api.ts), daher hier bewusst
+  // 1:1 der Saxo-Wert ohne weitere Kombinationslogik.
+  const reconciledFeesEur = saxo?.fees_reconciliation?.total_fees_eur ?? null;
+  const RECONCILIATION_TOOLTIP =
+    "Näherung aus dem Kontostand-Abgleich: aktueller Saxo-Kontowert minus " +
+    "Ein-/Auszahlungen minus reine Kursdifferenz (ohne jede Kommission) aller " +
+    "je gehaltenen Positionen. Keine trade-genaue Summe wie die Zeile darüber " +
+    "- kann sich bei künftigen Ein-/Auszahlungen oder Kursschwankungen der " +
+    "offenen Positionen verschieben.";
   const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
   const totalMaxOpenPositions = data.max_open_positions + (saxo?.max_open_positions ?? 0);
 
@@ -364,9 +375,16 @@ export default function Uebersicht() {
             }
             color="neutral"
             subtext={
-              saxo?.fees_exit_unknown
-                ? "Mindestbetrag: Exit-Gebühr für ältere Trades unbekannt (Saxo-Retention-Fenster abgelaufen)"
-                : undefined
+              <>
+                {saxo?.fees_exit_unknown && (
+                  <div>Mindestbetrag: Exit-Gebühr für ältere Trades unbekannt (Saxo-Retention-Fenster abgelaufen)</div>
+                )}
+                {reconciledFeesEur !== null && (
+                  <div title={RECONCILIATION_TOOLTIP}>
+                    Kontobasierte Schätzung: ≈ {fmtMoney(reconciledFeesEur, "EUR", 2)}
+                  </div>
+                )}
+              </>
             }
           />
           <KPICard
@@ -430,7 +448,16 @@ export default function Uebersicht() {
               combinedFeesEur !== null ? fmtMoney(combinedFeesEur, "EUR", 2) : fmtUsd(alpacaPlusManualFeesUsd, 2)
             }`}
             color="neutral"
-            subtext={saxo?.fees_exit_unknown ? `Mindestbetrag, ${fxSubtext}` : fxSubtext}
+            subtext={
+              <>
+                <div>{saxo?.fees_exit_unknown ? `Mindestbetrag, ${fxSubtext}` : fxSubtext}</div>
+                {reconciledFeesEur !== null && (
+                  <div title={`${RECONCILIATION_TOOLTIP} Nur Saxo - Alpaca berechnet nachweislich keine Kommission.`}>
+                    Kontobasierte Schätzung: ≈ {fmtMoney(reconciledFeesEur, "EUR", 2)}
+                  </div>
+                )}
+              </>
+            }
           />
           <KPICard
             compact
