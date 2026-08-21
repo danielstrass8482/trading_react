@@ -249,8 +249,13 @@ export default function Uebersicht() {
     usdToEur !== null && data.long_market_value !== null
       ? alpacaPlusManualBoundUsd * usdToEur + (saxoBoundEur ?? 0)
       : null;
+  // Geschätztes REALISIERT (Aufgabe 2026-08-21 Teil A) - realized_pnl_estimated_eur
+  // wenn vorhanden (Backend liefert null bei fehlgeschlagener Reconciliation),
+  // sonst der exakte realized_pnl_eur wie bisher. Alpaca ist davon nicht
+  // betroffen (fees_reconciliation existiert dort nicht, siehe api.ts).
+  const saxoRealizedDisplayEur = saxo ? (saxo.realized_pnl_estimated_eur ?? saxo.realized_pnl_eur) : null;
   const combinedRealizedEur =
-    usdToEur !== null ? alpacaPlusManualRealizedUsd * usdToEur + (saxo?.realized_pnl_eur ?? 0) : null;
+    usdToEur !== null ? alpacaPlusManualRealizedUsd * usdToEur + (saxoRealizedDisplayEur ?? 0) : null;
   const combinedUnrealizedEur =
     usdToEur !== null
       ? positions.reduce(
@@ -275,6 +280,9 @@ export default function Uebersicht() {
     "je gehaltenen Positionen. Keine trade-genaue Summe wie die Zeile darüber " +
     "- kann sich bei künftigen Ein-/Auszahlungen oder Kursschwankungen der " +
     "offenen Positionen verschieben.";
+  const REALIZED_ESTIMATE_TOOLTIP =
+    "Enthält geschätzte, nicht einzeln verifizierte Exit-Gebühren für 7 " +
+    "historische Trades (Saxo-Retention-Fenster abgelaufen).";
   const fxSubtext = usdToEur ? `Näherung, USD/EUR ${usdToEur.toFixed(3)}` : "getrennte Konten";
   const totalMaxOpenPositions = data.max_open_positions + (saxo?.max_open_positions ?? 0);
 
@@ -354,8 +362,21 @@ export default function Uebersicht() {
           <KPICard
             compact
             label="Realisiert"
-            value={saxo ? fmtMoneySigned(saxo.realized_pnl_eur, "EUR", 0) : saxoQuery.isError ? "n/a" : "…"}
-            color={saxo && saxo.realized_pnl_eur >= 0 ? "gain" : "loss"}
+            value={
+              saxo
+                ? saxo.realized_pnl_estimated_eur !== null
+                  ? `≈ ${fmtMoneySigned(saxo.realized_pnl_estimated_eur, "EUR", 0)}`
+                  : fmtMoneySigned(saxo.realized_pnl_eur, "EUR", 0)
+                : saxoQuery.isError
+                  ? "n/a"
+                  : "…"
+            }
+            color={saxo && (saxo.realized_pnl_estimated_eur ?? saxo.realized_pnl_eur) >= 0 ? "gain" : "loss"}
+            subtext={
+              saxo?.realized_pnl_estimated_eur !== null && saxo?.realized_pnl_estimated_eur !== undefined ? (
+                <div title={REALIZED_ESTIMATE_TOOLTIP}>Näherung, inkl. geschätzter Gebührenlücke</div>
+              ) : undefined
+            }
           />
           <KPICard
             compact
@@ -428,7 +449,14 @@ export default function Uebersicht() {
                 : fmtUsdSigned(alpacaPlusManualRealizedUsd, 0)
             }
             color={(combinedRealizedEur ?? alpacaPlusManualRealizedUsd) >= 0 ? "gain" : "loss"}
-            subtext={fxSubtext}
+            subtext={
+              <>
+                <div>{fxSubtext}</div>
+                {saxo?.realized_pnl_estimated_eur !== null && saxo?.realized_pnl_estimated_eur !== undefined && (
+                  <div title={REALIZED_ESTIMATE_TOOLTIP}>inkl. geschätzter Gebührenlücke (Saxo)</div>
+                )}
+              </>
+            }
           />
           <KPICard
             compact

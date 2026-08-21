@@ -162,6 +162,15 @@ export type SaxoOverview = {
   // PHIA.AS-Sanity-Check 2026-07-29).
   cash_available_eur: number;
   realized_pnl_eur: number;
+  // Geschätztes REALISIERT inkl. bisher nirgends abgezogener, unbekannter
+  // Exit-Kommissionen (Aufgabe 2026-08-21 Teil A, siehe trading_api_saxo.py
+  // get_overview()) - realized_pnl_eur minus (fees_reconciliation.total_fees_eur
+  // minus fees_eur), also NUR die Differenz zwischen der kontobasierten
+  // Gesamtschätzung und der bereits in realized_pnl_eur enthaltenen bekannten
+  // Untergrenze. Betrifft ausschließlich geschlossene Trades - UNREALISIERT
+  // bleibt unangetastet (offene Positionen hatten noch keine Exit-Kommission).
+  // null wenn fees_reconciliation fehlgeschlagen ist (kein Fallback).
+  realized_pnl_estimated_eur: number | null;
   // Gebühren-Kachel (Kommissionslücke-Diagnose 2026-08-19, siehe
   // trading_bot_saxo/database.py::get_total_fees_eur) - Summe aus
   // entry_commission_eur + exit_commission_eur über ALLE Trades (auch
